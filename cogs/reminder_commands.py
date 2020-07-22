@@ -49,10 +49,10 @@ class reminder_commands(commands.Cog):
         self.reminders.update({reference : True})
         await self.client.wait_until_ready()
         while not self.client.is_closed() and self.reminders[reference]:
-            # await ctx.send(f'{[guild for guild in self.client.guilds if guild.id == 702830850999451658][0].get_role(706110686501273602).mention}, it\'s  Thursday mah dudes') 
-            # await asyncio.sleep(7*24*60*60)
-            await ctx.send(f'{reference}')
-            await asyncio.sleep(10)
+            await ctx.send(f'{[guild for guild in self.client.guilds if guild.id == 702830850999451658][0].get_role(706110686501273602).mention}, it\'s  Thursday mah dudes') 
+            await asyncio.sleep(7*24*60*60)
+            # await ctx.send(f'{reference}')
+            # await asyncio.sleep(10)
         del self.reminders[reference]
 
     @commands.command(
