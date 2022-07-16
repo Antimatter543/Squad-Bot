@@ -14,7 +14,7 @@ from roles import admin_roles, elevated_roles
 
 class general_commands(commands.Cog):
 
-    def __init__(self,client):
+    def __init__(self, client):
         self.client = client
 
     ### COMMANDS ###
@@ -28,7 +28,7 @@ class general_commands(commands.Cog):
         await ctx.send(f'Pong! {round(self.client.latency * 1000)}ms')
 
     @commands.command(
-        aliases=['6roll','6Roll','6ROLL','Dice','dice'],
+        aliases=['6roll', '6Roll', '6ROLL', 'Dice', 'dice'],
         brief='Roll a dice',
         description='Returns a random number between 1 and 6'
         )
@@ -47,7 +47,7 @@ class general_commands(commands.Cog):
 
     @decide.error
     async def decide_error(self, ctx, error):
-        if isinstance(error,commands.MissingRequiredArgument):
+        if isinstance(error, commands.MissingRequiredArgument):
             await ctx.send('Please specify a list of items to choose from (seperated by spaces)')
         else:
             await ctx.send(f'An error occured, {error}')
@@ -56,6 +56,7 @@ class general_commands(commands.Cog):
         brief='Clears a number of messages',
         description='Clears a number of previous messages from a channel\nRequires an elevated role.'
         )
+
     @commands.has_any_role(*elevated_roles)
     async def clear(self, ctx, amount=5):
         logging.warning(f"<@{ctx.author.id}> called clear")
@@ -64,6 +65,7 @@ class general_commands(commands.Cog):
 
 def setup(client):
     client.add_cog(general_commands(client))
+
 
 def teardown(client):
     pass
