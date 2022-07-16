@@ -1,39 +1,40 @@
 # bot_main.py
 ### IMPORT ###
-from dotenv import load_dotenv
 import os
-
 import discord
 from discord.ext import commands
-
-### TODO update in all files
-allowed_roles = ['OG Squad']
-admin_roles = ['Developer']
-elevated_roles = ['Mody Boi']
-elevated_roles.extend(admin_roles)
-allowed_roles.extend(elevated_roles)
-
+from dotenv import load_dotenv, find_dotenv
+from roles import admin_roles, elevated_roles
+import logging
 ### TOKENS ###
 # load the env files
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+load_dotenv('.env')
+BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID  = os.getenv("DISCORD_GUILD")
 # check token
 if BOT_TOKEN == None:
     print('Invalid .env Token')
     exit()
 
+logging.basicConfig(filename='bot.log', level=logging.INFO)
+
 ### CLIENT ###
-client = commands.Bot(command_prefix='*')
+
+intents = discord.Intents.default()
+intents.messages = True
+intents.members = True
+
+client = commands.Bot(command_prefix='.cs ',intents=intents)
 
 ### COMMANDS ###
 # on bot connection
 @client.event
 async def on_ready():
-    await client.change_presence(status=discord.Status.online, 
-        activity=discord.Activity(type=discord.ActivityType.listening, name='*help'))
+    await client.change_presence(status=discord.Status.online,
+            activity=discord.Activity(type=discord.ActivityType.listening, name='.cs help'))
 
     for guild in client.guilds:
+        logging.info(f'{client.user} is connected to the following guild:\n {guild.name} (id: {guild.id})')  # will not print anything
         if guild.id == GUILD_ID:
             break
         print(f'{client.user} is connected to the following guild:\n {guild.name} (id: {guild.id})')
@@ -85,6 +86,7 @@ async def reload(ctx, extension):
 for filename in os.listdir('./cogs'):
     if filename.endswith('.py'):
         client.load_extension(f'cogs.{filename[:-3]}')
+
 
 
 
