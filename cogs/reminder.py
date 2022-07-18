@@ -14,7 +14,7 @@ path.append("..") # Adds higher directory to python modules path.
 from roles import admin_roles, elevated_roles
 
 
-class reminder_commands(commands.Cog):
+class reminders(commands.Cog):
 
     def __init__(self,client):
         self.client = client
@@ -33,8 +33,10 @@ class reminder_commands(commands.Cog):
         if message is not None:
             await ctx.send(f'you wanted to say: {message}')
 
-def setup(client):
-    client.add_cog(reminder_commands(client))
 
-def teardown(client):
+async def setup(bot):
+    await bot.add_cog(reminders(bot))
+
+
+async def teardown(bot):
     pass

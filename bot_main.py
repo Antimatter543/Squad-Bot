@@ -6,6 +6,7 @@ from discord.ext import commands
 from dotenv import load_dotenv, find_dotenv
 from roles import admin_roles, elevated_roles
 import logging
+import asyncio
 ### TOKENS ###
 # load the env files
 load_dotenv('.env')
@@ -22,6 +23,7 @@ logging.basicConfig(filename='bot.log', level=logging.INFO)
 
 intents = discord.Intents.default()
 intents.messages = True
+intents.message_content = True
 intents.members = True
 
 client = commands.Bot(command_prefix='.cs ',intents=intents)
@@ -59,7 +61,7 @@ async def on_command_error(ctx, error):
         )
 @commands.has_any_role(*admin_roles)
 async def load(ctx, extension):
-    client.load_extension(f'cogs.{extension}')
+    await client.load_extension(f'cogs.{extension}')
     await ctx.send(f'Loaded {str(extension)}!')
 
 @client.command(
@@ -68,7 +70,7 @@ async def load(ctx, extension):
         )
 @commands.has_any_role(*admin_roles)
 async def unload(ctx, extension):
-    client.unload_extension(f'cogs.{extension}')
+    await client.unload_extension(f'cogs.{extension}')
     await ctx.send(f'Unloaded {str(extension)}!')
 
 @client.command(
@@ -77,18 +79,23 @@ async def unload(ctx, extension):
         )
 @commands.has_any_role(*admin_roles)
 async def reload(ctx, extension):
-    client.reload_extension(f'cogs.{extension}')
+    await client.reload_extension(f'cogs.{extension}')
     if extension == 'reminder_commads':
         await ctx.send(f'Did you remember to close all currently active reminders, if not restarting code is required')
     await ctx.send(f'Reloaded {str(extension)}!')
 
-# load all commands on init
-for filename in os.listdir('./cogs'):
-    if filename.endswith('.py'):
-        client.load_extension(f'cogs.{filename[:-3]}')
 
 
+async def load_extensions():
+    for filename in os.listdir("./cogs"):
+        if filename.endswith(".py"):
+            # cut off the .py from the file name
+            await client.load_extension(f"cogs.{filename[:-3]}")
 
+async def main():
+    async with client:
+        await load_extensions()
+        await client.start(BOT_TOKEN)
 
 # run
-client.run(BOT_TOKEN)
+asyncio.run(main())
