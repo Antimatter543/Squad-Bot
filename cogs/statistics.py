@@ -2,72 +2,27 @@
 
 ### IMPORTS ###
 import discord
-from discord.ext import tasks, commands
+from discord.ext import commands
+from discord import app_commands
 
-import datetime
-import os
+from datetime import datetime
+import pytz
+
 from sys import path
-path.append("..") # Adds higher directory to python modules path.
-from roles import admin_roles, elevated_roles
+
 import re
-import logging
+from random import randint
 
+path.append("..") # Adds higher directory to python modules path.
+from roles import elevated_roles
 
-channel_id = 910694743728619540
-save_file = "./statistics.sav"
-
-class ScreamLog:
-    def __init__(self, aid, number = 0, days = 0, bestDays = 0) -> None:
-        self.aid = int(aid)
-        self.total = int(number)
-        self.days = int(days)
-        self.bestDays = int(bestDays)
-
-    def addDay(self):
-        self.days += 1
-        if self.days > self.bestDays:
-            self.bestDays = self.days
-
-    def __repr__(self) -> str:
-        return f"""Total number of screams: {self.total}
-    Number of consecutive days: {self.days}
-    Best streak: {self.bestDays}"""
-
-    def encode(self) -> str:
-        return f"{self.aid},{self.total},{self.days},{self.bestDays}"
+channel_id = [910694743728619540,997671564462002206]
 
 class statistics(commands.Cog):
-    regexp = re.compile(r'[aA]{3,}')
 
-    def __init__(self,client):
-        self.client = client
-        self.log = {}
-        self.screamsToday = []
-        if os.path.exists(save_file):
-            with open(save_file,'r') as f:
-                lines = f.readlines()
-                for line in lines:
-                    parts = line.strip().split(',')
-                    if len(parts) == 4:
-                        self.log[int(parts[0])] = ScreamLog(parts[0],parts[1],parts[2],parts[3])
-
-
-    async def cog_load(self):
-        self.newDay.start()
-
-    def generateStatistics(self, aid):
-        return self.log[aid]
-
-    def saveToFile(self):
-        with open(save_file, 'w') as f:
-            f.writelines([value.encode() for value in self.log.values()])
-
-    ### Tasks ###
-    @tasks.loop(time=datetime.time(14,0,0,0,tzinfo=datetime.timezone.utc))
-    async def newDay(self):
-        self.screamsToday = []
-        self.saveToFile()
-
+    def __init__(self, bot):
+        self.bot = bot
+        self.logger = bot.logger
 
     ### Listener ###
     @commands.Cog.listener()
@@ -75,97 +30,129 @@ class statistics(commands.Cog):
         # don't respond to bots
         if message.author.bot:
             return
-        if message.channel.id == channel_id:
+
+        if message.channel.id in channel_id:
             msg = message.content
             aid = message.author.id
-            if self.regexp.search(msg):
-                if aid not in self.log:
-                    self.log[aid] = ScreamLog(aid)
-                self.log[aid].total += 1
-                if aid not in self.screamsToday:
-                    self.screamsToday.append(aid)
-                    self.log[aid].addDay()
-                    await message.channel.send(f'Congrats <@{aid}> on your first scream of the day.\nYour current streak is: {self.log[aid].days}.\nFor more information see the ".cs help stats" command.')
+            try:
+                regexp = re.compile(r'[aA][arRgGAhH]{' + re.escape(str(randint(3,10))) + r',}')
+                if regexp.search(msg):
+                    async with self.bot.db.acquire() as connection:
+                        # Open a transaction.
+                        async with connection.transaction():
+                            newDay = False
+                            query = "SELECT * FROM dc_screams WHERE user_id = $1;"
+                            row = await connection.fetchrow(query, aid)
+                            if row is None:
+                                # add and update ref
+                                await connection.execute("INSERT INTO dc_screams VALUES($1, 0, 0, 0, $2)", aid, datetime(1970,1,1))
+                                row = await connection.fetchrow(query, aid)
+                            query = "UPDATE dc_screams\nSET\n"
+                            query += f"sc_total = {row['sc_total']+1}"
+
+                            today = datetime.now(pytz.timezone('Australia/Brisbane'))  \
+                                .replace(hour=0, minute=0, second=0, microsecond=0) \
+                                .astimezone(pytz.utc)
+                            if row['sc_daily'] < today:
+                                newDay = True
+                                streak = row['sc_streak'] + 1
+                                query += f",\nsc_daily = $2"
+                                query += f",\nsc_streak = {streak}"
+                                if row['sc_streak'] == row['sc_best_streak']:
+                                    query += f",\nsc_best_streak = {streak}\n"
+
+                            query += "\nWHERE user_id = $1;"
+
+                            if newDay:
+                                await connection.execute(query, aid, today)
+                            else:
+                                await connection.execute(query, aid)
+
+                            if newDay:
+                                await message.channel.send(f'Congrats <@{aid}> on your first scream of the day.\nYour current streak is: {streak}.')
+            except Exception as e:
+                self.logger.info(e)
 
     ### COMMANDS ###
-    @commands.command(aliases=['stats'],
+    @commands.hybrid_command(
+        name="stats",
         brief='Statistics of screams into the void',
-        description='Gives details on the number of times people have screamed into the void'
-        )
+        description='Gives details on the number of times people have screamed into the void',
+        with_app_command = True)
+    @app_commands.guilds(discord.Object(id=809997432011882516))
     async def statistics(self, ctx):
-        logging.info(f"<@{ctx.author.id}> called statistics")
-        if ctx.author.id in self.log:
-            await ctx.send(f'<@{ctx.author.id}>, here are your statistics\n{self.generateStatistics(ctx.author.id)}')
+        self.logger.info(f"{ctx.author.name} ({ctx.author.nick}) called statistics")
+        query = "SELECT * FROM dc_screams WHERE user_id = $1;"
+        row = await self.bot.db.fetchrow(query, ctx.author.id)
+        if row is not None:
+            msg = f'{ctx.author.mention}, here are your statistics\n'
+            msg += f"Total number of screams: {row['sc_total']}\n"
+            msg += f"Number of consecutive days: {row['sc_streak']}\n"
+            msg += f"Best streak: {row['sc_best_streak']}"
+            await ctx.reply(msg, ephemeral = True, delete_after=120, mention_author=False)
         else:
-            await ctx.send(f"<@{ctx.author.id}>, you have not done any screaming yet.\n(A scream is 3 or more consecuritve 'a' characters in the <#910694743728619540> channel)")
+            await ctx.reply(f"{ctx.author.mention}, you have not done any screaming yet.\n", ephemeral = True, delete_after=120, mention_author=False)
 
     async def get_user(self, aid):
         try:
-            user = await self.client.fetch_user(aid)
+            user = await self.bot.fetch_user(aid)
             user = "[Unknown]" if user is None else user
         except:
-            user = "[Unkown]"
+            user = "[Unknown]"
         return user
 
-    @commands.command(aliases=['screamtop'],
+    @commands.hybrid_command(
+        name="leaderboard",
+        aliases=['screamtop','top'],
         brief='Statistics of best screamers into the void',
-        description='Gives details on the number of times people have screamed into the void'
-        )
+        description='Gives details on the number of times people have screamed into the void',
+        with_app_command = True)
+    @app_commands.guilds(discord.Object(id=809997432011882516))
     async def leaderboard(self, ctx):
-        logging.info(f"<@{ctx.author.id}> called leaderboard")
-        logs = list(self.log.values())
+        self.logger.info(f"{ctx.author.name} ({ctx.author.nick}) called leaderboard")
 
-        top = 3
+        top = 5
+        query = f'select s.* from\n'
+        query += f'(select user_id, sc_total, rank() OVER (order by sc_total desc) as rank from dc_screams) s\n'
+        query += f'where rank <= {top}'
+        bestTotal = await self.bot.db.fetch(query)
 
-        bestTotal = sorted(logs,key= lambda l: int(l.total), reverse=True)[:top]
-        bestStreak = sorted(logs,key= lambda l: int(l.days), reverse=True)[:top]
-        bestStreakHistorical = sorted(logs,key= lambda l: int(l.bestDays), reverse=True)[:top]
+        query = f'select s.* from\n'
+        query += f'(select user_id, sc_streak, rank() OVER (order by sc_streak desc) as rank from dc_screams) s\n'
+        query += f'where rank <= {top}'
+        bestStreak = await self.bot.db.fetch(query)
+
+        query = f'select s.* from\n'
+        query += f'(select user_id, sc_best_streak, rank() OVER (order by sc_best_streak desc) as rank from dc_screams) s\n'
+        query += f'where rank <= {top}'
+        bestStreakHistorical = await self.bot.db.fetch(query)
+
         message = " ---{ LEADERBOARD }---\n"
-        message += "-> Total Number of times screamed\n"
+        now = round(datetime.timestamp(datetime.now()))
+        msg = await ctx.reply(message + f"Loading... since <t:{now}:R>", ephemeral = True, mention_author=False)
 
+        message += "-> Total Number of times screamed\n"
         for i in range(len(bestTotal)):
-            username = await self.get_user(bestTotal[i].aid)
-            message += f"---> {i+1}: {username} with {bestTotal[i].total} screams.\n"
+            username = await self.get_user(bestTotal[i]['user_id'])
+            message += f"---> {bestTotal[i]['rank']}: {username} with {bestTotal[i]['sc_total']} screams.\n"
         for i in range(len(bestTotal),top):
             message += f"---> {i+1}: This could be you!\n"
 
         message += "-> Best active daily streak\n"
         for i in range(len(bestStreak)):
-            username = await self.get_user(bestTotal[i].aid)
-            message += f"---> {i+1}: {username} with {bestStreak[i].days} days.\n"
+            username = await self.get_user(bestStreak[i]['user_id'])
+            message += f"---> {bestStreak[i]['rank']}: {username} with {bestStreak[i]['sc_streak']} days.\n"
         for i in range(len(bestStreak),top):
             message += f"---> {i+1}: This could be you!\n"
 
         message += "-> Best historical daily streak\n"
         for i in range(len(bestStreakHistorical)):
-            username = await self.get_user(bestTotal[i].aid)
-            message += f"---> {i+1}: {username} with {bestStreakHistorical[i].bestDays} days.\n"
+            username = await self.get_user(bestStreakHistorical[i]['user_id'])
+            message += f"---> {bestStreakHistorical[i]['rank']}: {username} with {bestStreakHistorical[i]['sc_best_streak']} days.\n"
         for i in range(len(bestStreakHistorical),top):
             message += f"---> {i+1}: This could be you!\n"
 
-        await ctx.send(message)
-
-    @commands.command(
-        brief='Resets the scream statistics',
-        description='Clears the scream statistics\nRequires an elevated role.'
-        )
-    @commands.has_any_role(*elevated_roles)
-    async def clearStats(self, ctx):
-        logging.warning(f"<@{ctx.author.id}> called clearStats")
-        self.log = {}
-        self.screamsToday = []
-        if os.path.exists(save_file):
-            os.remove(save_file)
-            logging.info("Save file deleted")
-
-    @commands.command(
-        brief='Force saves stats to a file',
-        description='See brief\nRequires an elevated role.'
-        )
-    @commands.has_any_role(*elevated_roles)
-    async def saveStats(self, ctx):
-        logging.warning(f"<@{ctx.author.id}> called saveStats")
-        self.saveToFile()
+        await msg.edit(content=message)
 
 async def setup(bot):
     await bot.add_cog(statistics(bot))
