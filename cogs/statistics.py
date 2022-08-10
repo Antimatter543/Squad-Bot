@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 from sys import path
@@ -50,21 +50,29 @@ class statistics(commands.Cog):
                             query = "UPDATE dc_screams\nSET\n"
                             query += f"sc_total = {row['sc_total']+1}"
 
+
+                            now = datetime.now(pytz.timezone('Australia/Brisbane'))
                             today = datetime.now(pytz.timezone('Australia/Brisbane'))  \
                                 .replace(hour=0, minute=0, second=0, microsecond=0) \
                                 .astimezone(pytz.utc)
                             if row['sc_daily'] < today:
                                 newDay = True
-                                streak = row['sc_streak'] + 1
+                                yesterday = today - timedelta(days=1)
+                                if row['sc_daily'] < yesterday:
+                                    streak = 0
+                                else:
+                                    streak = row['sc_streak']
+
+                                streak += 1
                                 query += f",\nsc_daily = $2"
                                 query += f",\nsc_streak = {streak}"
-                                if row['sc_streak'] == row['sc_best_streak']:
+                                if streak > row['sc_best_streak']:
                                     query += f",\nsc_best_streak = {streak}\n"
 
                             query += "\nWHERE user_id = $1;"
 
                             if newDay:
-                                await connection.execute(query, aid, today)
+                                await connection.execute(query, aid, now)
                             else:
                                 await connection.execute(query, aid)
 
