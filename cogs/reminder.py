@@ -58,7 +58,7 @@ class reminders(commands.Cog):
 
         self.reminders.remove(record)
 
-        await ctx.send(msg, ephemeral = True)
+        await ctx.reply(msg, ephemeral = True)
 
     @commands.hybrid_command(
         name="allreminders",
