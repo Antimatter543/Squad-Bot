@@ -2,6 +2,7 @@
 
 ### IMPORTS ###
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from random import choice, randint
@@ -19,22 +20,27 @@ class general(commands.Cog):
         self.sLog = {}
 
     ### COMMANDS ###
-    @commands.command(
+    @commands.hybrid_command(
+        name="ping",
         aliases=['p'],
         brief='Pong!, latency test',
-        description='Sends Pong!, followed by the result of a latecny test'
-        )
+        description='Sends Pong!, followed by the result of a latecny test',
+        with_app_command = True)
+    @app_commands.guilds(discord.Object(id=809997432011882516))
     async def ping(self, ctx):
         logging.info(f"{ctx.author.name} ({ctx.author.nick}) called ping")
-        await ctx.send(f'Pong! {round(self.bot.latency * 1000)}ms')
+        await ctx.reply(f'Pong! {round(self.bot.latency * 1000)}ms', ephemeral = True)
 
 
-    @commands.command(
-        aliases=['8ball', 'predictions', 'shake'],
+    @commands.hybrid_command(
+        name="fortune",
+        aliases=['8ball', 'predictions', 'shake', "magic_ball"],
         brief='Shake a magic 8 ball',
-        description='Get a fortune from the magic 8 ball'
-        )
-    async def magic_ball(self, ctx):
+        description='Get a fortune from the magic 8 ball',
+        with_app_command = True)
+    @app_commands.describe(message="What do you wish to ask?")
+    @app_commands.guilds(discord.Object(id=809997432011882516))
+    async def magic_ball(self, ctx, message=""):
         logging.info(f"{ctx.author.name} ({ctx.author.nick}) called magic_ball")
         options = [
             "It is certain.",
@@ -60,24 +66,28 @@ class general(commands.Cog):
         ]
         await ctx.reply(options[randint(0,len(options)-1)])
 
-    @commands.command(
-        aliases=['6roll', 'dice'],
+    @commands.hybrid_command(
+        name="6roll",
+        aliases=['roll_dice', 'dice'],
         brief='Roll a dice',
-        description='Returns a random number between 1 and 6'
-        )
-    async def roll_dice(self, ctx):
+        description='Returns a random number between 1 and 6',
+        with_app_command = True)
+    @app_commands.describe(sides="Number of sides.")
+    @app_commands.guilds(discord.Object(id=809997432011882516))
+    async def roll_dice(self, ctx, sides:int = 6):
         logging.info(f"{ctx.author.name} ({ctx.author.nick}) called roll_dice")
-        await ctx.send(f'Rolled a dice, it was a {randint(1,6)}!')
+        await ctx.send(f'Rolled a dice, it was a {randint(1,sides)}!')
 
-
-    @commands.command(
+    @commands.hybrid_command(
+        name="hug",
         aliases=['love'],
         brief='',
-        description=''
-        )
+        description='',
+        with_app_command = True)
+    @app_commands.guilds(discord.Object(id=809997432011882516))
     async def hug(self, ctx):
         logging.info(f"{ctx.author.name} ({ctx.author.nick}) called hug")
-        await ctx.send(f':hugging:')
+        await ctx.reply(f':hugging:')
 
     @commands.command(
         aliases=['sex2', 'biggus dickus','cock','cum','cumsum','dick','balls'],
@@ -102,9 +112,9 @@ class general(commands.Cog):
             "uWu"
         ]
         num = randint(0,100)
-        if num < 30:
+        if num < 20:
             await ctx.send(options[0])
-        elif num < 60:
+        elif num < 70:
             await ctx.send(options[1])
         elif num < 80:
             await ctx.send(options[2])
@@ -113,15 +123,30 @@ class general(commands.Cog):
         else:
             await ctx.send(options[4])
 
-
-    @commands.command(aliases=['d','choose','c'],
+    @commands.command(
+        name="decide",
+        aliases=['d','choose','c'],
         brief='Chooses between a list of items',
-        description='Returns a random value from a list of items given following the command (seperated by spaces)'
-        )
-    async def decide(self, ctx, *, options):
+        description='Returns a random value from a list of items given following the command')
+    @app_commands.guilds(discord.Object(id=809997432011882516))
+    async def decide(self, ctx, *options):
         logging.info(f"{ctx.author.name} ({ctx.author.nick}) called decide")
-        options = options.split(' ')
-        await ctx.send(f'Options: [{"],[".join(options)}]\nSelected: {choice(options)}')
+        if(len(options) == 0):
+            return
+        await ctx.reply(f'Options: [{"],[".join(options)}]\nSelected: {choice(options)}')
+
+    @app_commands.command(
+        name="decide",
+        description='Returns a random value from a list of items given following the command')
+    @app_commands.guilds(discord.Object(id=809997432011882516))
+    async def decide_slash(self, ctx,
+                           o0:str, o1:str="", o2:str="", o3:str="",
+                           o4:str="", o5:str="", o6:str="", o7:str="",
+                           o8:str="", o9:str=""):
+        logging.info(f"{ctx.author.name} ({ctx.author.nick}) called decide")
+        options = [ o0, o1, o2, o3, o4, o5, o6, o7, o8, o9]
+        options = [x for x in options if x != ""]
+        await ctx.reply(f'Options: [{"],[".join(options)}]\nSelected: {choice(options)}')
 
     @decide.error
     async def decide_error(self, ctx, error):
@@ -130,10 +155,12 @@ class general(commands.Cog):
         else:
             await ctx.send(f'An error occured, {error}')
 
-    @commands.command(
+    @commands.hybrid_command(
+        name="clear",
         brief='Clears a number of your past messages',
-        description='Clears a number of previous messages from a channel'
-        )
+        description='Clears a number of previous messages from a channel',
+        with_app_command = True)
+    @app_commands.guilds(discord.Object(id=809997432011882516))
     @commands.has_any_role(*elevated_roles)
     async def clear(self, ctx, amount=5):
         logging.warning(f"{ctx.author.name} ({ctx.author.nick}) called clear")
