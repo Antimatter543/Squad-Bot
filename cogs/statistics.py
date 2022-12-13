@@ -36,7 +36,8 @@ class statistics(commands.Cog):
             aid = message.author.id
             try:
                 regexp = re.compile(r'[aA][arRgGAhH]{' + re.escape(str(randint(3,10))) + r',}')
-                if regexp.search(msg):
+                regexp2 = re.compile(r':scream1:')
+                if regexp.search(msg) or regexp2.search(msg):
                     async with self.bot.db.acquire() as connection:
                         # Open a transaction.
                         async with connection.transaction():
@@ -55,7 +56,7 @@ class statistics(commands.Cog):
                             today = datetime.now(pytz.timezone('Australia/Brisbane'))  \
                                 .replace(hour=0, minute=0, second=0, microsecond=0) \
                                 .astimezone(pytz.utc)
-                            if row['sc_daily'] < today:
+                            if row['sc_daily'] < today and regexp.search(msg):
                                 newDay = True
                                 yesterday = today - timedelta(days=1)
                                 if row['sc_daily'] < yesterday:
@@ -78,6 +79,9 @@ class statistics(commands.Cog):
 
                             if newDay:
                                 await message.channel.send(f'Congrats <@{aid}> on your first scream of the day.\nYour current streak is: {streak}.')
+                                if streak == 100:
+                                    await message.channel.send('https://i.guim.co.uk/img/media/8a840f693b91fe67d42555b24c6334e9298f4680/251_1497_2178_1306/master/2178.jpg?width=1200&height=900&quality=85&auto=format&fit=crop&s=9ff658ed0e9b905fa583c592cc2342f5')
+                                    await message.channel.send('Congrats on reaching 100!')
             except Exception as e:
                 self.logger.info(e)
 
@@ -121,17 +125,17 @@ class statistics(commands.Cog):
 
         top = 5
         query = f'select s.* from\n'
-        query += f'(select user_id, sc_total, rank() OVER (order by sc_total desc) as rank from dc_screams) s\n'
+        query += f'(select user_id, sc_total, rank() OVER (order by sc_total desc) as rank from dc_screams where user_id != 328794426560217088) s\n'
         query += f'where rank <= {top}'
         bestTotal = await self.bot.db.fetch(query)
 
         query = f'select s.* from\n'
-        query += f'(select user_id, sc_streak, rank() OVER (order by sc_streak desc) as rank from dc_screams) s\n'
+        query += f'(select user_id, sc_streak, rank() OVER (order by sc_streak desc) as rank from dc_screams where user_id != 328794426560217088) s\n'
         query += f'where rank <= {top}'
         bestStreak = await self.bot.db.fetch(query)
 
         query = f'select s.* from\n'
-        query += f'(select user_id, sc_best_streak, rank() OVER (order by sc_best_streak desc) as rank from dc_screams) s\n'
+        query += f'(select user_id, sc_best_streak, rank() OVER (order by sc_best_streak desc) as rank from dc_screams where user_id != 328794426560217088) s\n'
         query += f'where rank <= {top}'
         bestStreakHistorical = await self.bot.db.fetch(query)
 

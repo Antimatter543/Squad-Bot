@@ -40,7 +40,7 @@ class general(commands.Cog):
         with_app_command = True)
     @app_commands.describe(message="What do you wish to ask?")
     @app_commands.guilds(discord.Object(id=809997432011882516))
-    async def magic_ball(self, ctx, message=""):
+    async def magic_ball(self, ctx, *, message=""):
         logging.info(f"{ctx.author.name} ({ctx.author.nick}) called magic_ball")
         options = [
             "It is certain.",
@@ -64,7 +64,11 @@ class general(commands.Cog):
             "Outlook not so good.",
             "Very doubtful."
         ]
-        await ctx.reply(options[randint(0,len(options)-1)])
+        if message != "":
+            content = f"> {message}"
+        else:
+            content = ""
+        await ctx.reply(content + "\n" + options[randint(0,len(options)-1)])
 
     @commands.hybrid_command(
         name="6roll",
