@@ -1,14 +1,13 @@
 # bot_main.py
 # IMPORT
-import discord
-from discord.ext import commands
-
 import glob
 import logging
-import asyncpg
-
 from datetime import datetime
-from typing import Optional, MappingProxyType
+from typing import MappingProxyType, Optional
+
+import asyncpg
+import discord
+from discord.ext import commands
 
 
 class Config(dict):
@@ -41,6 +40,7 @@ class Bot(commands.Bot):
             "DB_USER": "discord",
             "DB_PASSWORD": "discord",
             "DB_HOST": "127.0.0.1",
+            "DB_ENABLED": True,
         }
     )
 
