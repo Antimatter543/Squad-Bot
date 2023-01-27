@@ -112,6 +112,45 @@ class statistics(commands.Cog):
                 mention_author=False,
             )
 
+    @commands.hybrid_command(
+        name="didiscream",
+        brief="Check if this user has screamed yet today",
+        description="Gives details on the number of times people have screamed into the void",
+        with_app_command=True,
+    )
+    @app_commands.guilds(discord.Object(id=809997432011882516))
+    async def didiscream(self, ctx, user=None):
+        if user is None:
+            user = ctx.author.id
+        else:
+            user = user.strip('<').strip('@').strip('>')
+            if not user.isdigit():
+                await ctx.reply("Please select a user", ephemeral=True, delete_after=120, mention_author=False)
+                return
+            user = int(user)
+
+        query = "SELECT * FROM dc_screams WHERE user_id = $1;"
+        row = await self.bot.db.fetchrow(query, user)
+        if row is not None:
+            today = (
+                datetime.now(pytz.timezone("Australia/Brisbane"))
+                .replace(hour=0, minute=0, second=0, microsecond=0)
+                .astimezone(pytz.utc)
+            )
+            self.bot.log.info(row["sc_daily"])
+            if row["sc_daily"] < today:
+                msg = "You have not screamed yet today."
+            else:
+                msg = "You have screamed today."
+            await ctx.reply(msg, ephemeral=True, delete_after=120, mention_author=False)
+        else:
+            await ctx.reply(
+                f"User does not exist or has not done any screaming yet.\n",
+                ephemeral=True,
+                delete_after=120,
+                mention_author=False,
+            )
+
     async def get_user(self, aid):
         try:
             user = await self.bot.fetch_user(aid)

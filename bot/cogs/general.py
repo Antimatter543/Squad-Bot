@@ -11,7 +11,6 @@ class general(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log = bot.log
-        self.sLog = {}
 
     # Commands
     @commands.hybrid_command(

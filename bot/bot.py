@@ -1,15 +1,14 @@
-# bot_main.py
-# IMPORT
 import glob
 import logging
 from datetime import datetime
-from types import MappingProxyType
 from typing import Optional
+from types import MappingProxyType
 
 import asyncpg
 import discord
 from discord.ext import commands
-
+import os
+import sys
 
 class Config(dict):
     """
@@ -121,8 +120,19 @@ class Bot(commands.Bot):
             self.log.info(msg=f"Database connection failed: {e}")
 
         # Cogs loader
-        for cog in (f"{filename.replace('/','.')[:-3]}" for filename in glob.glob("cogs/*.py")):
+        # navigate to this files folder
+        cdir = os.getcwd()
+        os.chdir(os.path.dirname(__file__))
+        sys.path.insert(0, os.getcwd())
+        for cog in (
+            f"{filename.replace('/','.')[:-3]}"
+            for filename in glob.glob("cogs/**/*.py", recursive=True)
+        ):
+            self.log.info(msg=f"Loading: {cog}")
             await self.load_extension(cog)
+        # restore old directory in case user is expecting
+        sys.path.remove(os.getcwd())
+        os.chdir(cdir)
 
         # Sync application commands
         self.loop.create_task(self.startup())
@@ -144,7 +154,7 @@ class Bot(commands.Bot):
             msg = f"An error occured:\n{error}"
             self.log.error(f"Command {command.qualified_name} caused an exception\n{error.original}")
 
-        ctx.reply(msg, delete_after=60)
+        await ctx.reply(msg, delete_after=60)
 
     async def cogs_manager(self, mode: str, cogs: list[str]) -> None:
         for cog in cogs:
