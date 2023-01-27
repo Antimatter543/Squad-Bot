@@ -3,7 +3,8 @@
 import glob
 import logging
 from datetime import datetime
-from typing import MappingProxyType, Optional
+from types import MappingProxyType
+from typing import Optional
 
 import asyncpg
 import discord
