@@ -3,7 +3,7 @@
 from discord.ext import commands
 
 
-class debugging(commands.Cog):
+class Debugging(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
@@ -11,9 +11,13 @@ class debugging(commands.Cog):
 
     @commands.command(aliases=["dbe"], require_var_positional=True)
     @commands.is_owner()
-    async def debug_exec(self, ctx, command):
+    async def debug_exec(self, ctx, *, command):
         await ctx.reply(f"{eval(command)}")
 
+    @commands.command(require_var_positional=True)
+    @commands.is_owner()
+    async def debug(self, ctx, *, command):
+        self.bot.log.info(command)
 
 async def setup(bot):
-    await bot.add_cog(debugging(bot))
+    await bot.add_cog(Debugging(bot))
