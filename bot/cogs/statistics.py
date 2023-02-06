@@ -2,36 +2,52 @@
 
 import re
 from datetime import datetime, timedelta
-from functools import lru_cache
 from random import randint
+from typing import Optional
 
+import discord
 import pytz
 from discord.ext import commands
+from discord import app_commands
+
+from bot.lib.utils import now_tz
 
 # UQCSC, TEST
 channel_id = [910694743728619540, 997671564462002206]
 
+
+class UnkownUser:
+    def __init__(self) -> None:
+        self.display_name = "[Unknown]"
+    def __str__(self) -> str:
+        return self.display_name
 
 class statistics(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log = bot.log
 
+
     async def _init(self):
         query = (
             "CREATE TABLE IF NOT EXISTS dc_screams (\n"
-            "user_id BIGINT PRIMARY KEY\n"
-            "sc_total INT \n"
-            "sc_streak INT \n"
-            "sc_best_streak INT \n"
-            "sc_daily TIMESTAMP WITH TIME ZONE \n"
+            "user_id BIGINT PRIMARY KEY,\n"
+            "sc_total INT,\n"
+            "sc_streak INT,\n"
+            "sc_best_streak INT,\n"
+            "sc_daily TIMESTAMP WITH TIME ZONE\n"
             ");"
         )
         async with self.bot.db.acquire() as connection:
             await connection.execute(query)
 
+    @property
+    def today(self):
+        return now_tz().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+
     # Listener
     @commands.Cog.listener()
+    @commands.bot_has_permissions(manage_roles=True)
     async def on_message(self, message):
         # don't respond to bots
         if message.author.bot:
@@ -41,6 +57,7 @@ class statistics(commands.Cog):
             msg = message.content
             author = message.author
             aid = author.id
+            guild = author.guild
             try:
                 regexp = re.compile(r"[aA][arRgGAhH]{" + re.escape(str(randint(5, 15))) + r",}")
                 regexp2 = re.compile(r":scream1:")
@@ -62,12 +79,8 @@ class statistics(commands.Cog):
                             query = "UPDATE dc_screams\nSET\n"
                             query += f"sc_total = {row['sc_total']+1}"
 
-                            now = datetime.now(pytz.timezone("Australia/Brisbane"))
-                            today = (
-                                datetime.now(pytz.timezone("Australia/Brisbane"))
-                                .replace(hour=0, minute=0, second=0, microsecond=0)
-                                .astimezone(pytz.utc)
-                            )
+                            now = now_tz()
+                            today = self.today
 
                             # check if new day
                             newDay = False
@@ -98,10 +111,10 @@ class statistics(commands.Cog):
                                     )
                                     await message.channel.send(f"Congrats on reaching {streak}!")
                                 if streak == self.bot.config.get("STAT_SC_MINOR", 100):
-                                    role = author.guild.get_role("Void Veteran")
+                                    role = discord.utils.get(guild.roles, name="Void Veteran")
                                     await author.add_roles(role)
                                 if streak == self.bot.config.get("STAT_SC_MAJOR", 250):
-                                    role = author.guild.get_role("Legends of the Void")
+                                    role = discord.utils.get(guild.roles, name="Legends of the Void")
                                     await author.add_roles(role)
                             else:
                                 await connection.execute(query, aid)
@@ -115,21 +128,29 @@ class statistics(commands.Cog):
         description="Gives details on the number of times people have screamed into the void",
         with_app_command=True,
     )
-    async def statistics(self, ctx):
+    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
+    async def statistics(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        if user is None:
+            user = ctx.author
+
+        uid = user.id
+
         query = "SELECT * FROM dc_screams WHERE user_id = $1;"
         async with self.bot.db.acquire() as connection:
-            row = await connection.fetchrow(query, ctx.author.id)
+            row = await connection.fetchrow(query, uid)
         if row is not None:
-            msg = (
-                f"{ctx.author.mention}, here are your statistics\n"
-                f"Total number of screams: {row['sc_total']}\n"
-                f"Number of consecutive days: {row['sc_streak']}\n"
-                f"Best streak: {row['sc_best_streak']}"
-            )
-            await ctx.reply(msg, ephemeral=True, delete_after=120, mention_author=False)
+            name = ctx.author.display_name
+            avatar = ctx.author.display_avatar
+            embed = discord.Embed(title="Scream Statistics", description=f"{name}, here are you statistics.")
+            embed.set_author(name=f"{name}")
+            embed.set_thumbnail(url=f"{avatar}")
+            embed.add_field(name="Total Screams", value=f"{row['sc_total']}")
+            embed.add_field(name="Scream Streak", value=f"{row['sc_streak']}")
+            embed.add_field(name="Best Scream Streak", value=f"{row['sc_best_streak']}")
+            await ctx.reply(embed=embed, ephemeral=True, delete_after=120, mention_author=True)
         else:
             await ctx.reply(
-                f"{ctx.author.mention}, you have not done any screaming yet.\n",
+                f"{user.display_name}, has not done any screaming yet.\n",
                 ephemeral=True,
                 delete_after=120,
                 mention_author=False,
@@ -141,30 +162,25 @@ class statistics(commands.Cog):
         description="Check if this user has screamed yet today",
         with_app_command=True,
     )
-    async def didiscream(self, ctx, user=None):
+    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
+    async def didiscream(self, ctx: commands.Context, user: Optional[discord.Member] = None):
         if user is None:
-            user = ctx.author.id
+            user = ctx.author
+            start = "You "
         else:
-            user = user.strip("<").strip("@").strip(">")
-            if not user.isdigit():
-                await ctx.reply("Please select a user", ephemeral=True, delete_after=120, mention_author=False)
-                return
-            user = int(user)
+            start = "They "
+
+        uid = user.id
 
         query = "SELECT * FROM dc_screams WHERE user_id = $1;"
         async with self.bot.db.acquire() as connection:
-            row = await connection.fetchrow(query, user)
+            row = await connection.fetchrow(query, uid)
         if row is not None:
-            today = (
-                datetime.now(pytz.timezone("Australia/Brisbane"))
-                .replace(hour=0, minute=0, second=0, microsecond=0)
-                .astimezone(pytz.utc)
-            )
             self.bot.log.info(row["sc_daily"])
-            if row["sc_daily"] < today:
-                msg = "You have not screamed yet today."
+            if row["sc_daily"] < self.today:
+                msg = start + "have not screamed yet today."
             else:
-                msg = "You have screamed today."
+                msg = start + "have screamed today."
             await ctx.reply(msg, ephemeral=True, delete_after=120, mention_author=False)
         else:
             await ctx.reply(
@@ -174,13 +190,12 @@ class statistics(commands.Cog):
                 mention_author=False,
             )
 
-    @lru_cache(maxsize=50)
     async def get_user(self, aid):
         try:
             user = await self.bot.fetch_user(aid)
-            user = "[Unknown]" if user is None else user
+            user = UnkownUser() if user is None else user
         except Exception:
-            user = "[Unknown]"
+            user = UnkownUser()
         return user
 
     @commands.hybrid_command(
@@ -190,46 +205,59 @@ class statistics(commands.Cog):
         description="Gives details on the number of times people have screamed into the void",
         with_app_command=True,
     )
-    async def leaderboard(self, ctx):
-        now = round(datetime.timestamp(datetime.now()))
-        message = " ---{ LEADERBOARD }---\n"
-        msg = await ctx.reply(message + f"Loading... since <t:{now}:R>", ephemeral=True, mention_author=False)
+    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
+    async def leaderboard(self, ctx: commands.Context):
+        now = round(datetime.timestamp(now_tz()))
 
-        query = (
-            "select s.* from\n"
-            "(select user_id, $1, rank() OVER (order by $2 desc) as rank from dc_screams) s\n"
-            f"where rank <= $3;"
-        )
+        header = "---{ Scream Leaderboard }---"
+
+        embed = discord.Embed(title=f"{header}", description=f"The top screamers", color=discord.Color.darker_grey())
+        embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1043839508887634010.webp?size=96&quality=lossless")
+
+        msg = await ctx.reply(f"{header}\nLoading... since <t:{now}:R>", ephemeral=True, mention_author=False)
+
         top = 5
+        queries = [(
+            "SELECT s.* FROM\n"
+            f"(SELECT user_id, {table}, rank() OVER (order by {table} desc) as rank FROM dc_screams) s"
+            f" WHERE s.rank <= {top};"
+        ) for table in [ "sc_total", "sc_streak", "sc_best_streak"]]
+
+
         async with self.bot.db.acquire() as connection:
-            bestTotal = await connection.fetch(query, "sc_total", "sc_total", top)
+            bestTotal = await connection.fetch(queries[0])
 
-            bestStreak = await connection.fetch(query, "sc_streak", "sc_streak", top)
+            bestStreak = await connection.fetch(queries[1])
 
-            bestStreakHistorical = await connection.fetch(query, "sc_best_streak", "sc_best_streak", top)
+            bestStreakHistorical = await connection.fetch(queries[2])
 
-        message += "-> Total Number of times screamed\n"
+
+        emoji = {1: ":one:", 2: ":two:", 3: ":three:", 4: ":four:", 5: ":five:"}
+        message = ""
         for i in range(len(bestTotal)):
-            username = await self.get_user(bestTotal[i]["user_id"])
-            message += f"---> {bestTotal[i]['rank']}: {username} with {bestTotal[i]['sc_total']} screams.\n"
+            user = await self.get_user(bestTotal[i]["user_id"])
+            message += f"{emoji[bestTotal[i]['rank']]}\u27F6 {user.display_name} with {bestTotal[i]['sc_total']} screams.\n"
         for i in range(len(bestTotal), top):
-            message += f"---> {i+1}: This could be you!\n"
+            message += f"{emoji[i+1]}\u27F6 This could be you!\n"
+        embed.add_field(name="__Total Number of times screamed__", value=f"{message}",inline=False)
 
-        message += "-> Best active daily streak\n"
+        message = ""
         for i in range(len(bestStreak)):
-            username = await self.get_user(bestStreak[i]["user_id"])
-            message += f"---> {bestStreak[i]['rank']}: {username} with {bestStreak[i]['sc_streak']} days.\n"
+            user = await self.get_user(bestStreak[i]["user_id"])
+            message += f"{emoji[bestStreak[i]['rank']]}\u27F6 {user.display_name} with {bestStreak[i]['sc_streak']} days.\n"
         for i in range(len(bestStreak), top):
-            message += f"---> {i+1}: This could be you!\n"
+            message += f"{emoji[i+1]}\u27F6 This could be you!\n"
+        embed.add_field(name="__Best active daily streak__", value=f"{message}",inline=False)
 
-        message += "-> Best historical daily streak\n"
+        message = ""
         for i in range(len(bestStreakHistorical)):
-            username = await self.get_user(bestStreakHistorical[i]["user_id"])
-            message += f"---> {bestStreakHistorical[i]['rank']}: {username} with {bestStreakHistorical[i]['sc_best_streak']} days.\n"
+            user = await self.get_user(bestStreakHistorical[i]["user_id"])
+            message += f"{emoji[bestStreakHistorical[i]['rank']]}\u27F6 {user.display_name} with {bestStreakHistorical[i]['sc_best_streak']} days.\n"
         for i in range(len(bestStreakHistorical), top):
-            message += f"---> {i+1}: This could be you!\n"
+            message += f"{emoji[i+1]}\u27F6 This could be you!\n"
+        embed.add_field(name="__Best historical daily streak__", value=f"{message}",inline=False)
 
-        await msg.edit(content=message)
+        await msg.edit(content="", embed=embed)
 
 
 async def setup(bot):
