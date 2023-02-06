@@ -27,7 +27,7 @@ class RepeatingReminder:
         cid: int,
         message: str,
         interval: int,
-        requested_time: int = 0,
+        requested_time: datetime,
     ) -> None:
         self.bot = bot
         self.started = False
@@ -62,8 +62,8 @@ class RepeatingReminder:
 
     async def send_message(self):
         channel = self.bot.get_channel(self.cid)
-        now = round(self.requested_time)
-        msg = f"<@{self.aid}>, this is your reminder, Reqested <t:{now}:T> <t:{now}:d>"
+        now = round(datetime.timestamp(self.requested_time))
+        msg = f"<@{self.aid}>, this is your repeating reminder, Reqested <t:{now}:T> <t:{now}:d>"
         msg += f"\nYou wanted to say: {self.message}"
         await channel.send(msg, allowed_mentions=mention_only_user)
 
@@ -79,13 +79,14 @@ class reminders(commands.Cog):
             await asyncio.sleep(delay)
             await self.repeating[rid].start(send_now=True)
 
-        async def start_reminder(delay: int, cid: int, requested_time: int, msg: str):
+        async def start_reminder(delay: int, rid: int, aid: int, cid: int, requested_time: datetime, message: str):
             await asyncio.sleep(delay)
             channel = self.bot.get_channel(cid)
-            now = round(requested_time)
+            now = round(datetime.timestamp(requested_time))
             msg = f"<@{aid}>, this is your reminder, Reqested <t:{now}:T> <t:{now}:d>"
-            msg += f"\nYou wanted to say: {msg}"
+            msg += f"\nYou wanted to say: {message}"
             await channel.send(msg, allowed_mentions=mention_only_user)
+            await self.remove_reminder(aid, rid)
 
         query = (
             "CREATE TABLE IF NOT EXISTS dc_reminders (\n"
@@ -93,8 +94,8 @@ class reminders(commands.Cog):
             "user_id BIGINT NOT NULL,\n"
             "channel_id BIGINT NOT NULL,\n"
             "message TEXT NOT NULL,\n"
-            "send_time INT NOT NULL,\n"
-            "requested_time INT NOT NULL,\n"
+            "send_time TIMESTAMP WITH TIME ZONE NOT NULL,\n"
+            "requested_time TIMESTAMP WITH TIME ZONE NOT NULL,\n"
             "repeat BOOLEAN\n"
             ");"
         )
@@ -105,20 +106,20 @@ class reminders(commands.Cog):
             reminders = await connection.fetch(query)
 
             for reminder in reminders:
-                rid, aid, cid, msg, delta_s, requested_time, repeat = reminder
+                rid, aid, cid, msg, send_time, requested_time, repeat = reminder
                 now = now_tz()
-                timestamp = round(datetime.timestamp(now))
                 if bool(repeat):
-                    self.repeating[rid] = RepeatingReminder(self.bot, aid, cid, msg, delta_s, requested_time)
-                    asyncio.create_task(start_repeat((timestamp - requested_time) % delta_s, rid))
+                    interval = int((send_time - requested_time).total_seconds())
+                    self.repeating[rid] = RepeatingReminder(self.bot, aid, cid, msg, interval, requested_time)
+                    delta = int((now - requested_time).total_seconds())
+                    asyncio.create_task(start_repeat(delta % interval, rid))
                 else:
                     # remove reminders that should have already happened
-                    if datetime.fromtimestamp(requested_time + delta_s, tz=get_tz()) < now:
+                    if send_time < now:
                         await self.remove_reminder(aid, rid)
                     else:  # Set up missing reminder
-                        asyncio.create_task(
-                            start_reminder(delta_s - (timestamp - requested_time), cid, requested_time, msg)
-                        )
+                        delay = int((send_time - now).total_seconds())
+                        asyncio.create_task(start_reminder(delay, rid, aid, cid, requested_time, msg))
 
     async def add_reminder(self, user_id, channel_id, message, send_time, requested_time, repeat=False):
         async with self.bot.db.acquire() as connection:
@@ -127,10 +128,13 @@ class reminders(commands.Cog):
                 "(user_id, channel_id, message, send_time, requested_time, repeat) "
                 "VALUES ($1, $2, $3, $4, $5, $6);"
             )
-            row = await connection.fetchrow(query, user_id, channel_id, message, send_time, requested_time, repeat)
+            await connection.execute(query, user_id, channel_id, message, send_time, requested_time, repeat)
+            row = await connection.fetchrow(
+                "SELECT * FROM dc_reminders WHERE user_id = $1 AND requested_time = $2;", user_id, requested_time
+            )
             return row["id"]
 
-    async def remove_reminder(self, aid, rid):
+    async def remove_reminder(self, aid: int, rid: int):
         async with self.bot.db.acquire() as connection:
             query = "DELETE FROM dc_reminders WHERE id = $1 and user_id = $2;"
             await connection.execute(query, rid, aid)
@@ -146,10 +150,11 @@ class reminders(commands.Cog):
         :param delta: time to wait in seconds
         :param message: message to send
         """
-        n = now_tz()
+        now = now_tz()
 
-        now = round(datetime.timestamp(n))
-        remind_in = round(datetime.timestamp(n + timedelta(seconds=delta_s)))
+        now_ts = round(datetime.timestamp(now))
+        remind_time = now + timedelta(seconds=delta_s)
+        remind_time_ts = round(datetime.timestamp(remind_time))
 
         if isinstance(ctx, commands.Context):
             send_f = ctx.reply
@@ -160,20 +165,19 @@ class reminders(commands.Cog):
         else:
             return
 
-        await send_f(f"Your reminder will be sent <t:{remind_in}:R>.", ephemeral=True)
+        await send_f(f"Your reminder will be sent <t:{remind_time_ts}:R>.", ephemeral=True)
 
-        msg = f"{author.mention}, this is your reminder, Reqested <t:{now}:T> <t:{now}:d>"
-        msg += f"\nYou wanted to say: {message}"
-
-        rid = await self.add_reminder(author.id, ctx.channel.id, message, delta_s, now, repeat)
+        rid = await self.add_reminder(author.id, ctx.channel.id, message, remind_time, now, repeat)
 
         if not repeat:
+            msg = f"{author.mention}, this is your reminder, Reqested <t:{now_ts}:T> <t:{now_ts}:d>"
+            msg += f"\nYou wanted to say: {message}"
             await asyncio.sleep(delta_s)
 
             await send_f(msg, ephemeral=True)
             await self.remove_reminder(author.id, rid)
         else:
-            self.repeating[rid] = RepeatingReminder(self.bot, author.id, ctx.channel.id, message, delta_s, now)
+            self.repeating[rid] = RepeatingReminder(self.bot, author.id, ctx.channel.id, message, delta_s, now_ts)
             await self.repeating[rid].start()
 
     # Commands
@@ -226,9 +230,9 @@ class reminders(commands.Cog):
         self, interaction: discord.Interaction, weeks: int, days: int, hours: int, minutes: int, *, message: str
     ):
         time_s = convert_seconds(weeks=weeks, days=days, hours=hours, minutes=minutes)
-        if time_s < convert_seconds(hours=1):
+        if time_s < convert_seconds(hours=12):
             await interaction.response.send_message(
-                "Repeating reminders must have at least a 1 hour interval", ephemeral=True
+                "Repeating reminders must have at least a 12 hour interval", ephemeral=True
             )
             return
         await self._reminder(interaction, time_s, message, repeat=True)
