@@ -7,8 +7,8 @@ from typing import Optional
 
 import discord
 import pytz
-from discord.ext import commands
 from discord import app_commands
+from discord.ext import commands
 
 from bot.lib.utils import now_tz
 
@@ -19,14 +19,15 @@ channel_id = [910694743728619540, 997671564462002206]
 class UnkownUser:
     def __init__(self) -> None:
         self.display_name = "[Unknown]"
+
     def __str__(self) -> str:
         return self.display_name
+
 
 class statistics(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log = bot.log
-
 
     async def _init(self):
         query = (
@@ -217,12 +218,14 @@ class statistics(commands.Cog):
         msg = await ctx.reply(f"{header}\nLoading... since <t:{now}:R>", ephemeral=True, mention_author=False)
 
         top = 5
-        queries = [(
-            "SELECT s.* FROM\n"
-            f"(SELECT user_id, {table}, rank() OVER (order by {table} desc) as rank FROM dc_screams) s"
-            f" WHERE s.rank <= {top};"
-        ) for table in [ "sc_total", "sc_streak", "sc_best_streak"]]
-
+        queries = [
+            (
+                "SELECT s.* FROM\n"
+                f"(SELECT user_id, {table}, rank() OVER (order by {table} desc) as rank FROM dc_screams) s"
+                f" WHERE s.rank <= {top};"
+            )
+            for table in ["sc_total", "sc_streak", "sc_best_streak"]
+        ]
 
         async with self.bot.db.acquire() as connection:
             bestTotal = await connection.fetch(queries[0])
@@ -231,23 +234,27 @@ class statistics(commands.Cog):
 
             bestStreakHistorical = await connection.fetch(queries[2])
 
-
         emoji = {1: ":one:", 2: ":two:", 3: ":three:", 4: ":four:", 5: ":five:"}
+
         message = ""
         for i in range(len(bestTotal)):
             user = await self.get_user(bestTotal[i]["user_id"])
-            message += f"{emoji[bestTotal[i]['rank']]}\u27F6 {user.display_name} with {bestTotal[i]['sc_total']} screams.\n"
+            message += (
+                f"{emoji[bestTotal[i]['rank']]}\u27F6 {user.display_name} with {bestTotal[i]['sc_total']} screams.\n"
+            )
         for i in range(len(bestTotal), top):
             message += f"{emoji[i+1]}\u27F6 This could be you!\n"
-        embed.add_field(name="__Total Number of times screamed__", value=f"{message}",inline=False)
+        embed.add_field(name="__Total Number of times screamed__", value=f"{message}", inline=False)
 
         message = ""
         for i in range(len(bestStreak)):
             user = await self.get_user(bestStreak[i]["user_id"])
-            message += f"{emoji[bestStreak[i]['rank']]}\u27F6 {user.display_name} with {bestStreak[i]['sc_streak']} days.\n"
+            message += (
+                f"{emoji[bestStreak[i]['rank']]}\u27F6 {user.display_name} with {bestStreak[i]['sc_streak']} days.\n"
+            )
         for i in range(len(bestStreak), top):
             message += f"{emoji[i+1]}\u27F6 This could be you!\n"
-        embed.add_field(name="__Best active daily streak__", value=f"{message}",inline=False)
+        embed.add_field(name="__Best active daily streak__", value=f"{message}", inline=False)
 
         message = ""
         for i in range(len(bestStreakHistorical)):
@@ -255,7 +262,7 @@ class statistics(commands.Cog):
             message += f"{emoji[bestStreakHistorical[i]['rank']]}\u27F6 {user.display_name} with {bestStreakHistorical[i]['sc_best_streak']} days.\n"
         for i in range(len(bestStreakHistorical), top):
             message += f"{emoji[i+1]}\u27F6 This could be you!\n"
-        embed.add_field(name="__Best historical daily streak__", value=f"{message}",inline=False)
+        embed.add_field(name="__Best historical daily streak__", value=f"{message}", inline=False)
 
         await msg.edit(content="", embed=embed)
 
