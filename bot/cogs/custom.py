@@ -10,6 +10,5 @@ class Custom(commands.Cog):
         self.log = bot.log
 
 
-
 async def setup(bot):
     await bot.add_cog(Custom(bot))
