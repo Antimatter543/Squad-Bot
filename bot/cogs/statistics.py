@@ -131,6 +131,7 @@ class statistics(commands.Cog):
     )
     @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def statistics(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        await ctx.defer(ephemeral=True)
         if user is None:
             user = ctx.author
 
@@ -165,6 +166,7 @@ class statistics(commands.Cog):
     )
     @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def didiscream(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        await ctx.defer(ephemeral=True)
         if user is None:
             user = ctx.author
             start = "You "
@@ -208,6 +210,7 @@ class statistics(commands.Cog):
     )
     @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def leaderboard(self, ctx: commands.Context):
+        await ctx.defer(ephemeral=True)
         now = round(datetime.timestamp(now_tz()))
 
         header = "---{ Scream Leaderboard }---"

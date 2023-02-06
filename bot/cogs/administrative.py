@@ -38,6 +38,7 @@ class Admin(commands.Cog):
     @commands.has_permissions(manage_roles=True)
     @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def edit_role_premissions(self, interaction: discord.Interaction, action: str, rtype: str, role_name: str):
+        await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
         if guild is None:
             return
@@ -62,6 +63,7 @@ class Admin(commands.Cog):
 
         else:
             raise NotImplementedError("This role has not been implemented")
+        await interaction.followup.send("Done")
 
 
 async def setup(bot):

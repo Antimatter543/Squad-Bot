@@ -140,9 +140,10 @@ class Bot(commands.Bot):
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         command: commands.Command = ctx.command
         msg = None
-
-        await ctx.message.add_reaction("\u274C")
-
+        try:
+            await ctx.message.add_reaction("\u274C")
+        except discord.errors.NotFound:
+            pass
         if isinstance(error, commands.BotMissingPermissions):
             msg = "Bot does not have sufficient permissions."
         if isinstance(error, commands.CommandNotFound):

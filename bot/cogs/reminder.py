@@ -15,22 +15,30 @@ from bot.settings import admin_roles, elevated_roles
 mention_only_user = discord.AllowedMentions(everyone=False, users=False, roles=False)
 
 
-def convert_seconds(*, weeks: int = 0, days: int = 0, hours: int = 0, minutes: int = 0, seconds: int = 0):
-    return seconds + minutes * 60 + hours * 60 * 60 + days * 24 * 60 * 60 + weeks * 7 * 24 * 60 * 60
+class _time:
+    second = 1
+    minute = second * 60
+    hour = minute * 60
+    day = hour * 24
+    week = day * 7
+
+    @staticmethod
+    def convert_seconds(*, weeks: int = 0, days: int = 0, hours: int = 0, minutes: int = 0, seconds: int = 0):
+        return seconds + minutes * _time.minute + hours * _time.hour + days * _time.day + weeks * _time.week
+
+    @staticmethod
+    def seconds_to_string(seconds=0):
+        time = timedelta(seconds=seconds)
+        mm, ss = divmod(time.seconds, 60)
+        hh, mm = divmod(mm, 60)
+        return f"{time.days} days, {hh} hours, {mm} minutes, {ss} seconds"
 
 
 class RepeatingReminder:
-    def __init__(
-        self,
-        bot,
-        aid: int,
-        cid: int,
-        message: str,
-        interval: int,
-        requested_time: datetime,
-    ) -> None:
+    def __init__(self, bot, aid: int, cid: int, message: str, interval: int, requested_time: datetime, delay=0) -> None:
         self.bot = bot
         self.started = False
+        self.stopped = False
         self._task = None
 
         self.aid = aid
@@ -38,34 +46,50 @@ class RepeatingReminder:
         self.message = message
         self.interval = interval
         self.requested_time = requested_time
+        self.delay = delay
 
-    async def start(self, send_now=False):
+    async def start(self):
+        if self.stopped:
+            return
         if not self.started:
             self.started = True
             self._task = asyncio.ensure_future(self._run())
-            if send_now:
-                await self.send_message()
 
     async def stop(self):
+        self.stopped = True
         if self.started:
             self.started = False
             # Stop task and await it stopped:
             if self._task is not None:
-                self._task.cancel()
+                was_cancelled = self._task.cancel()
+                if not was_cancelled:
+                    self.bot.log.error("Failed to cancel task")
                 with suppress(asyncio.CancelledError):
+                    self.bot.log.error("Failed to cancel task")
                     await self._task
 
     async def _run(self):
         while True:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+                await self.send_message()
+                self.delay = 0
+
             await asyncio.sleep(self.interval)
             await self.send_message()
 
     async def send_message(self):
         channel = self.bot.get_channel(self.cid)
-        now = round(datetime.timestamp(self.requested_time))
-        msg = f"<@{self.aid}>, this is your repeating reminder, Reqested <t:{now}:T> <t:{now}:d>"
-        msg += f"\nYou wanted to say: {self.message}"
-        await channel.send(msg, allowed_mentions=mention_only_user)
+        now = round(datetime.timestamp(now_tz()))
+        then = round(datetime.timestamp(self.requested_time))
+        embed = discord.Embed(
+            title=f"Scheduled Reminder",
+            description=f"<@{self.aid}>'s repeating reminder\nSent <t:{now}:T> <t:{now}:d>\nReqested: <t:{then}:T> <t:{then}:d>",
+        )
+        embed.add_field(name="Message", value=f"{self.message}")
+        embed.set_footer(text=f"Repeats every: {_time.seconds_to_string(self.interval)}")
+
+        await channel.send(embed=embed, allowed_mentions=mention_only_user)
 
 
 class reminders(commands.Cog):
@@ -73,17 +97,14 @@ class reminders(commands.Cog):
         self.bot = bot
         self.log = bot.log
         self.repeating: dict[int, RepeatingReminder] = {}
+        self.tasks = []
 
     async def _init(self):
-        async def start_repeat(delay: int, rid: int):
-            await asyncio.sleep(delay)
-            await self.repeating[rid].start(send_now=True)
-
         async def start_reminder(delay: int, rid: int, aid: int, cid: int, requested_time: datetime, message: str):
             await asyncio.sleep(delay)
             channel = self.bot.get_channel(cid)
-            now = round(datetime.timestamp(requested_time))
-            msg = f"<@{aid}>, this is your reminder, Reqested <t:{now}:T> <t:{now}:d>"
+            then = round(datetime.timestamp(requested_time))
+            msg = f"<@{aid}>, this is your reminder (loaded from backup)\nReqested <t:{then}:T> <t:{then}:d>"
             msg += f"\nYou wanted to say: {message}"
             await channel.send(msg, allowed_mentions=mention_only_user)
             await self.remove_reminder(aid, rid)
@@ -110,16 +131,26 @@ class reminders(commands.Cog):
                 now = now_tz()
                 if bool(repeat):
                     interval = int((send_time - requested_time).total_seconds())
-                    self.repeating[rid] = RepeatingReminder(self.bot, aid, cid, msg, interval, requested_time)
                     delta = int((now - requested_time).total_seconds())
-                    asyncio.create_task(start_repeat(delta % interval, rid))
+                    self.repeating[rid] = RepeatingReminder(
+                        self.bot, aid, cid, msg, interval, requested_time, interval - (delta % interval)
+                    )
+                    await self.repeating[rid].start()
                 else:
                     # remove reminders that should have already happened
                     if send_time < now:
                         await self.remove_reminder(aid, rid)
                     else:  # Set up missing reminder
                         delay = int((send_time - now).total_seconds())
-                        asyncio.create_task(start_reminder(delay, rid, aid, cid, requested_time, msg))
+                        self.tasks.append(
+                            asyncio.create_task(start_reminder(delay, rid, aid, cid, requested_time, msg))
+                        )
+
+    async def _destroy(self):
+        for _, reminder in self.repeating.items():
+            await reminder.stop()
+        for task in self.tasks:
+            task.cancel()
 
     async def add_reminder(self, user_id, channel_id, message, send_time, requested_time, repeat=False):
         async with self.bot.db.acquire() as connection:
@@ -160,7 +191,7 @@ class reminders(commands.Cog):
             send_f = ctx.reply
             author = ctx.author
         elif isinstance(ctx, discord.Interaction):
-            send_f = ctx.response.send_message
+            send_f = ctx.followup.send
             author = ctx.user
         else:
             return
@@ -170,14 +201,14 @@ class reminders(commands.Cog):
         rid = await self.add_reminder(author.id, ctx.channel.id, message, remind_time, now, repeat)
 
         if not repeat:
-            msg = f"{author.mention}, this is your reminder, Reqested <t:{now_ts}:T> <t:{now_ts}:d>"
+            msg = f"{author.mention}, this is your reminder\nReqested <t:{now_ts}:T> <t:{now_ts}:d>"
             msg += f"\nYou wanted to say: {message}"
             await asyncio.sleep(delta_s)
 
             await send_f(msg, ephemeral=True)
             await self.remove_reminder(author.id, rid)
         else:
-            self.repeating[rid] = RepeatingReminder(self.bot, author.id, ctx.channel.id, message, delta_s, now_ts)
+            self.repeating[rid] = RepeatingReminder(self.bot, author.id, ctx.channel.id, message, delta_s, now)
             await self.repeating[rid].start()
 
     # Commands
@@ -215,7 +246,8 @@ class reminders(commands.Cog):
     async def reminderApp(
         self, interaction: discord.Interaction, days: int, hours: int, minutes: int, seconds: int, *, message: str
     ):
-        time_s = convert_seconds(days=days, hours=hours, minutes=minutes, seconds=seconds)
+        time_s = _time.convert_seconds(days=days, hours=hours, minutes=minutes, seconds=seconds)
+        await interaction.response.defer(ephemeral=True)
         await self._reminder(interaction, time_s, message)
 
     @app_commands.command(name="repeating_reminder", description="Reminds you of something (Repeating). 1 Hour minimum")
@@ -229,8 +261,9 @@ class reminders(commands.Cog):
     async def reminderRepeating(
         self, interaction: discord.Interaction, weeks: int, days: int, hours: int, minutes: int, *, message: str
     ):
-        time_s = convert_seconds(weeks=weeks, days=days, hours=hours, minutes=minutes)
-        if time_s < convert_seconds(hours=12):
+        await interaction.response.defer(ephemeral=True)
+        time_s = _time.convert_seconds(weeks=weeks, days=days, hours=hours, minutes=minutes)
+        if time_s < _time.convert_seconds(hours=12):
             await interaction.response.send_message(
                 "Repeating reminders must have at least a 12 hour interval", ephemeral=True
             )
@@ -240,6 +273,7 @@ class reminders(commands.Cog):
     @app_commands.command(name="my_reminders", description="See your reminders")
     @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def myReminders(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         query = "SELECT * FROM dc_reminders WHERE user_id = $1;"
         async with self.bot.db.acquire() as connection:
             reminders = await connection.fetch(query, interaction.user.id)
@@ -248,27 +282,33 @@ class reminders(commands.Cog):
             if reminders:
                 msg = "\n".join(
                     [
-                        f"{rid}: {message} at <t:{requested_time + time}:f> - requested <t:{requested_time}:f> (repeating={repeat})"
-                        for rid, _, _, message, time, requested_time, repeat in reminders
+                        (
+                            f"rid={rid}: (repeating={repeat}) {message} "
+                            f"to be sent at <t:{round(datetime.timestamp(send_time))}:f>"
+                            f"- requested <t:{round(datetime.timestamp(requested_time))}:f> "
+                        )
+                        for rid, _, _, message, send_time, requested_time, repeat in reminders
                     ]
                 )
             else:
                 msg = "No reminders are set"
 
             embed.add_field(name="Reminders", value=msg)
-            await interaction.response.send_message(embed=embed, ephemeral=True, allowed_mentions=mention_only_user)
+            await interaction.followup.send(embed=embed, ephemeral=True, allowed_mentions=mention_only_user)
 
     @app_commands.command(name="delete_reminder", description="Delete a repeating reminder")
     @app_commands.describe(rid="Reminder id (see myReminders command).")
     @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def deleteReminders(self, interaction: discord.Interaction, rid: int):
+        await interaction.response.defer(ephemeral=True)
         await self.remove_reminder(interaction.user.id, rid)
-        await interaction.response.send_message("Deleted reminder", ephemeral=True)
+        await interaction.followup.send("Deleted reminder", ephemeral=True)
 
     @commands.hybrid_command(name="allreminders", brief="See active reminders", with_app_command=True)
     @commands.has_any_role(*elevated_roles, *admin_roles)
     @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def allReminders(self, ctx: commands.Context):
+        await ctx.defer(ephemeral=True)
         query = "SELECT * FROM dc_reminders;"
         async with self.bot.db.acquire() as connection:
             reminders = await connection.fetch(query)
@@ -276,8 +316,12 @@ class reminders(commands.Cog):
             if reminders:
                 msg = "\n".join(
                     [
-                        f" <@{author}> wants to say: {message} at <t:{requested_time + time}:f> - requested <t:{requested_time}:f> (repeating={repeat})"
-                        for _, author, _, message, time, requested_time, repeat in reminders
+                        (
+                            f"rid={rid} - <@{author}>: (repeating={repeat}) {message} "
+                            f"to be sent at <t:{round(datetime.timestamp(send_time))}:f>"
+                            f"- requested <t:{round(datetime.timestamp(requested_time))}:f> "
+                        )
+                        for rid, author, _, message, send_time, requested_time, repeat in reminders
                     ]
                 )
             else:
@@ -287,11 +331,16 @@ class reminders(commands.Cog):
             await ctx.reply(embed=embed, ephemeral=True, allowed_mentions=mention_only_user)
 
 
+rems = None
+
+
 async def setup(bot):
+    global rems
     rems = reminders(bot)
     await rems._init()
     await bot.add_cog(rems)
 
 
 async def teardown(bot):
-    pass
+    if rems is not None:
+        await rems._destroy()
