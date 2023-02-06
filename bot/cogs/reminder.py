@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.lib.utils import get_tz, now_tz
+from bot.lib.utils import now_tz
 from bot.settings import admin_roles, elevated_roles
 
 mention_only_user = discord.AllowedMentions(everyone=False, users=False, roles=False)

@@ -28,6 +28,16 @@ class statistics(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log = bot.log
+        self.stats_menu = app_commands.ContextMenu(
+            name="statistics",
+            callback=self.statistics_menu,
+        )
+        self.bot.tree.add_command(self.stats_menu)
+        self.hasscreamed_menu = app_commands.ContextMenu(
+            name="Have they screamed?",
+            callback=self.didiscream_menu,
+        )
+        self.bot.tree.add_command(self.hasscreamed_menu)
 
     async def _init(self):
         query = (
@@ -122,6 +132,31 @@ class statistics(commands.Cog):
             except Exception as e:
                 self.log.info(e)
 
+    async def get_statistics(self, uid, name, avatar) -> discord.Embed:
+        query = "SELECT * FROM dc_screams WHERE user_id = $1;"
+        async with self.bot.db.acquire() as connection:
+            row = await connection.fetchrow(query, uid)
+        embed = discord.Embed(title="Scream Statistics", description=f"{name}, here are you statistics.")
+        embed.set_author(name=f"{name}")
+        embed.set_thumbnail(url=f"{avatar}")
+        if row is not None:
+            embed.add_field(name="Total Screams", value=f"{row['sc_total']}")
+            embed.add_field(name="Scream Streak", value=f"{row['sc_streak']}")
+            embed.add_field(name="Best Scream Streak", value=f"{row['sc_best_streak']}")
+        else:
+            embed.add_field(name="", value="No screams as of yet.")
+        return embed
+
+    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
+    async def statistics_menu(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        await interaction.response.defer(ephemeral=True)
+        uid = user.id
+        name = user.display_name
+        avatar = user.display_avatar
+        embed = await self.get_statistics(uid, name, avatar)
+        msg = await interaction.followup.send(embed=embed, ephemeral=True, wait=True)
+        await msg.delete(delay=120)
+
     # Commands
     @commands.hybrid_command(
         name="stats",
@@ -136,27 +171,36 @@ class statistics(commands.Cog):
             user = ctx.author
 
         uid = user.id
+        name = user.display_name
+        avatar = user.display_avatar
+        embed = await self.get_statistics(uid, name, avatar)
+        await ctx.reply(embed=embed, ephemeral=True, delete_after=120, mention_author=False)
 
+    async def get_has_screamed(self, uid, start="", name="User") -> str:
         query = "SELECT * FROM dc_screams WHERE user_id = $1;"
         async with self.bot.db.acquire() as connection:
             row = await connection.fetchrow(query, uid)
         if row is not None:
-            name = ctx.author.display_name
-            avatar = ctx.author.display_avatar
-            embed = discord.Embed(title="Scream Statistics", description=f"{name}, here are you statistics.")
-            embed.set_author(name=f"{name}")
-            embed.set_thumbnail(url=f"{avatar}")
-            embed.add_field(name="Total Screams", value=f"{row['sc_total']}")
-            embed.add_field(name="Scream Streak", value=f"{row['sc_streak']}")
-            embed.add_field(name="Best Scream Streak", value=f"{row['sc_best_streak']}")
-            await ctx.reply(embed=embed, ephemeral=True, delete_after=120, mention_author=True)
+            self.bot.log.info(row["sc_daily"])
+            if row["sc_daily"] < self.today:
+                msg = start + "have not screamed yet today."
+            else:
+                msg = start + "have screamed today."
         else:
-            await ctx.reply(
-                f"{user.display_name}, has not done any screaming yet.\n",
-                ephemeral=True,
-                delete_after=120,
-                mention_author=False,
-            )
+            msg = f"{name} has not done any screaming yet."
+        return msg
+
+    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
+    async def didiscream_menu(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        await interaction.response.defer(ephemeral=True)
+        if user == interaction.user:
+            start = "You "
+        else:
+            start = "They "
+        uid = user.id
+        msg = await self.get_has_screamed(uid, start, user.display_name)
+        msg = await interaction.followup.send(content=msg, ephemeral=True, wait=True)
+        await msg.delete(delay=120)
 
     @commands.hybrid_command(
         name="didiscream",
@@ -174,24 +218,8 @@ class statistics(commands.Cog):
             start = "They "
 
         uid = user.id
-
-        query = "SELECT * FROM dc_screams WHERE user_id = $1;"
-        async with self.bot.db.acquire() as connection:
-            row = await connection.fetchrow(query, uid)
-        if row is not None:
-            self.bot.log.info(row["sc_daily"])
-            if row["sc_daily"] < self.today:
-                msg = start + "have not screamed yet today."
-            else:
-                msg = start + "have screamed today."
-            await ctx.reply(msg, ephemeral=True, delete_after=120, mention_author=False)
-        else:
-            await ctx.reply(
-                f"User does not exist or has not done any screaming yet.\n",
-                ephemeral=True,
-                delete_after=120,
-                mention_author=False,
-            )
+        msg = await self.get_has_screamed(uid, start)
+        await ctx.reply(msg, ephemeral=True, delete_after=120, mention_author=False)
 
     async def get_user(self, aid):
         try:

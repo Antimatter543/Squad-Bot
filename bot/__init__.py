@@ -49,7 +49,7 @@ class Bot(commands.Bot):
         super().__init__(*args, **kwargs)
 
         # Configure logger
-        logger = logging.getLogger("discord").setLevel(logging.DEBUG)
+        logger = logging.getLogger("discord").setLevel(logging.INFO)
         logging.getLogger("discord.http").setLevel(logging.INFO)
         logger = logging.getLogger("discord_bot")
         logger.propagate = False
