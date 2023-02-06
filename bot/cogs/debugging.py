@@ -11,13 +11,14 @@ class Debugging(commands.Cog):
 
     @commands.command(aliases=["dbe"], require_var_positional=True)
     @commands.is_owner()
-    async def debug_exec(self, ctx, *, command):
+    async def debug_exec(self, ctx: commands.Context, *, command):
         await ctx.reply(f"{eval(command)}")
 
     @commands.command(require_var_positional=True)
     @commands.is_owner()
-    async def debug(self, ctx, *, command):
+    async def debug(self, ctx: commands.Context, *, command):
         self.bot.log.info(command)
+
 
 async def setup(bot):
     await bot.add_cog(Debugging(bot))
