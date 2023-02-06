@@ -1,11 +1,13 @@
 # Example discord bot initialisation
-from bot import Bot
+import asyncio
+from os import getenv
 
 import discord
-import asyncio
 
+# requires python-dotenv
 from dotenv import load_dotenv
-from os import getenv
+
+from bot import Bot
 
 # TOKENS
 # load the env files
