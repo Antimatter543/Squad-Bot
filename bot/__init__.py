@@ -137,6 +137,9 @@ class Bot(commands.Bot):
     async def on_command(self, ctx: commands.Context):
         self.log.info(f"{ctx.author} ({ctx.author.nick}) used command  {ctx.message.content}")
 
+    async def on_interaction(self, interaction: discord.Interaction):
+        self.log.info(f"{interaction.user} ({interaction.user.nick}) used command  {interaction.message.content}")
+
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         command: commands.Command = ctx.command
         msg = None
