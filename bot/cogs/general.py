@@ -1,14 +1,15 @@
-# general.py
-
 from random import choice, randint
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+cog_name = "general"
+
 
 class general(commands.Cog):
     def __init__(self, bot):
+        super().__init__()
         self.bot = bot
         self.log = bot.log
 
@@ -20,7 +21,7 @@ class general(commands.Cog):
         description="Sends Pong!, followed by the result of a latecny test",
         with_app_command=True,
     )
-    async def ping(self, ctx):
+    async def ping(self, ctx: commands.Context):
         await ctx.reply(f"Pong! {round(self.bot.latency * 1000)}ms", ephemeral=True)
 
     @commands.hybrid_command(
@@ -31,8 +32,7 @@ class general(commands.Cog):
         with_app_command=True,
     )
     @app_commands.describe(message="What do you wish to ask?")
-    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
-    async def magic_ball(self, ctx: commands.Context, *, message=""):
+    async def magic_ball(self, ctx: commands.Context, *, message: str = ""):
         options = [
             "It is certain.",
             "It is decidedly so.",
@@ -69,13 +69,13 @@ class general(commands.Cog):
         with_app_command=True,
     )
     @app_commands.describe(sides="Number of sides.")
-    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
     async def roll_dice(self, ctx: commands.Context, sides: int = 6):
+        if sides < 1:
+            raise commands.BadArgument("Number of sides must be greater than 0")
         await ctx.send(f"Rolled a dice, it was a {randint(1,sides)}!")
 
     @commands.hybrid_command(name="hug", aliases=["love"], brief="", description="", with_app_command=True)
-    @app_commands.guilds(discord.Object(id=809997432011882516), discord.Object(id=676253010053300234))
-    async def hug(self, ctx):
+    async def hug(self, ctx: commands.Context):
         await ctx.reply(":hugging:")
 
     @commands.command(
