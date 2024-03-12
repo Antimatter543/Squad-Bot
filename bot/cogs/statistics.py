@@ -5,11 +5,12 @@ from typing import Optional
 
 import discord
 import pytz
-from bot.database.models import Screams, StatisticsConfig
-from bot.lib.date import epoch, now_tz
 from discord import app_commands
 from discord.ext import commands
 from sqlalchemy import func, select
+
+from bot.database.models import Screams, StatisticsConfig
+from bot.lib.date import epoch, now_tz
 
 cog_name = "statistics"
 
@@ -169,6 +170,7 @@ class statistics(commands.Cog):
                                 sc_streak=0,
                                 sc_best_streak=0,
                                 sc_daily=epoch(),
+                                sc_streak_keeper=epoch(),
                             )
                         user.sc_total += 1
 
@@ -354,6 +356,82 @@ class statistics(commands.Cog):
             name="__Best historical daily streak__", value=f"{await build_message(bestStreakHistorical)}", inline=False
         )
         await interaction.response.edit_message(content="", embed=embed)
+
+    @stats_group.command(
+        name="savestreak", description="If you missed one day sacrifice 30 days of your previous streak to save it."
+    )
+    @app_commands.describe(
+        confirm="You need to confirm you want to sacrifice some of your streak. 'Check' will show you if you can save your streak."
+    )
+    @app_commands.choices(
+        confirm=[app_commands.Choice(name=str(i), value=i) for i in ["True", "False", "Check"]],
+    )
+    @app_commands.guild_only()
+    async def streak_saver(self, interaction: discord.Interaction, confirm: str = "False"):
+        await interaction.response.defer(ephemeral=True)
+        if confirm == "False":
+            await interaction.followup.send(
+                "You need to confirm that you want to save your streak by explicitly setting the value to true.",
+                ephemeral=True,
+                delete_after=120,
+            )
+            return
+        user = interaction.user
+        row = await self.get_screams(user.id)
+        if row is None:
+            await interaction.followup.send(
+                f"{user.display_name} has no stats to save.", ephemeral=True, delete_after=120
+            )
+            return
+        today = self.today
+        yesterday = today - timedelta(days=1)
+        two_days_ago = today - timedelta(days=2)
+        six_months_ago = today - timedelta(days=180)
+        if user.sc_daily < today:
+            scream_time = round(datetime.timestamp(user.sc_daily))
+            if user.sc_daily > yesterday:
+                await interaction.followup.send(
+                    f"You do not need to save your streak, scream to continue it", ephemeral=True, delete_after=120
+                )
+                return
+            if user.sc_daily < two_days_ago:
+                await interaction.followup.send(
+                    f"Your streak is too old to save (last scream was <t:{scream_time}:R>.), scream to start a new one",
+                    ephemeral=True,
+                    delete_after=120,
+                )
+                return
+            if row.sc_streak_keeper > six_months_ago:
+                save_time = round(datetime.timestamp(user.sc_streak_keeper))
+                await interaction.followup.send(
+                    f"You can only save your streak once every 6 months (lasted saved <t:{save_time}:R>), scream to continue it",
+                    ephemeral=True,
+                    delete_after=120,
+                )
+                return
+            if row.sc_streak < 30:
+                await interaction.followup.send(
+                    f"Your streak is too short to save, scream to start a new one", ephemeral=True, delete_after=120
+                )
+                return
+            if confirm == "Check":
+                await interaction.followup.send(
+                    f"Your streak is {row.sc_streak} days long, you can save it by sacrificing 30 days of your previous streak.\nYour last scream was <t:{scream_time}:R>.",
+                    ephemeral=True,
+                    delete_after=120,
+                )
+                return
+            async with self.bot.session as session:
+                row.sc_streak_keeper = today
+                row.sc_streak -= 30
+                session.add(row)
+                await session.commit()
+            await interaction.followup.send(
+                f"Your streak has been saved, you lost 30 days but kept the streak.",
+                ephemeral=True,
+                delete_after=120,
+                embed=await self.get_statistics(user.id, user.display_name, user.display_avatar),
+            )
 
     @stats_group.command(name="override", description="Override a users existing stats.")
     @app_commands.checks.has_permissions(administrator=True)

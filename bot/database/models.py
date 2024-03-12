@@ -16,6 +16,7 @@ class Screams(Base):
     sc_streak: Mapped[int]
     sc_best_streak: Mapped[int]
     sc_daily: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sc_streak_keeper: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self):
         return f"<Screams(user_id={self.user_id}, sc_total={self.sc_total}, sc_streak={self.sc_streak}, sc_best_streak={self.sc_best_streak}, sc_daily={self.sc_daily})>"
