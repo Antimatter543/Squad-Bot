@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, Identity
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, backref, relationship
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.database import Base
@@ -54,3 +54,31 @@ class Reminder(Base):
         return iter(
             (self.id, self.user_id, self.channel_id, self.message, self.send_time, self.requested_time, self.repeat)
         )
+
+
+# courses.py
+
+
+class CourseChannel(Base):
+    __tablename__ = "dc_course_channels"
+    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    course_id: Mapped[str]
+    reset: Mapped[bool]
+
+    def __repr__(self):
+        return f"<CourseChannel(channel_id={self.channel_id}, course_id={self.course_id})>"
+
+
+class CourseEnrollment(Base):
+    __tablename__ = "dc_course_enrollments"
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("dc_course_channels.channel_id"), primary_key=True)
+
+    channel = relationship(
+        "CourseChannel",
+        foreign_keys=[channel_id],
+        backref=backref("dc_course_enrollments", cascade="all, delete-orphan"),
+    )
+
+    def __repr__(self):
+        return f"<CourseEnrollment(user_id={self.user_id}, course_id={self.course_id}, last_access={self.last_access}, progress={self.progress})>"
