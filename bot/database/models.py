@@ -19,7 +19,16 @@ class Screams(Base):
     sc_streak_keeper: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self):
-        return f"<Screams(user_id={self.user_id}, sc_total={self.sc_total}, sc_streak={self.sc_streak}, sc_best_streak={self.sc_best_streak}, sc_daily={self.sc_daily})>"
+        return (
+            f"<Screams("
+            f"user_id={self.user_id},"
+            f"sc_total={self.sc_total},"
+            f"sc_streak={self.sc_streak},"
+            f"sc_best_streak={self.sc_best_streak},"
+            f"sc_daily={self.sc_daily},"
+            f"sc_streak_keeper={self.sc_streak_keeper}"
+            ")>"
+        )
 
 
 class StatisticsConfig(Base):
@@ -48,7 +57,17 @@ class Reminder(Base):
     repeat: Mapped[bool]
 
     def __repr__(self):
-        return f"<Reminder(id={self.id}, user_id={self.user_id}, channel_id={self.channel_id}, message={self.message}, send_time={self.send_time}, requested_time={self.requested_time}, repeat={self.repeat})>"
+        return (
+            f"<Reminder("
+            f"id={self.id},"
+            f"user_id={self.user_id},"
+            f"channel_id={self.channel_id},"
+            f"message={self.message},"
+            f"send_time={self.send_time},"
+            f"requested_time={self.requested_time},"
+            f"repeat={self.repeat}"
+            ")>"
+        )
 
     def __iter__(self):
         return iter(
@@ -62,23 +81,38 @@ class Reminder(Base):
 class CourseChannel(Base):
     __tablename__ = "dc_course_channels"
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    course_id: Mapped[str]
-    reset: Mapped[bool]
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    course_code: Mapped[str]
+    do_not_reset: Mapped[bool]
 
     def __repr__(self):
-        return f"<CourseChannel(channel_id={self.channel_id}, course_id={self.course_id})>"
+        return (
+            f"<CourseChannel("
+            f"channel_id={self.channel_id},"
+            f"guild_id={self.guild_id},"
+            f"course_code={self.course_code},"
+            f"do_not_reset={self.do_not_reset}"
+            ")>"
+        )
 
 
 class CourseEnrollment(Base):
     __tablename__ = "dc_course_enrollments"
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("dc_course_channels.channel_id"), primary_key=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
     channel = relationship(
         "CourseChannel",
-        foreign_keys=[channel_id],
+        foreign_keys=[channel_id, guild_id],
         backref=backref("dc_course_enrollments", cascade="all, delete-orphan"),
     )
 
     def __repr__(self):
-        return f"<CourseEnrollment(user_id={self.user_id}, course_id={self.course_id}, last_access={self.last_access}, progress={self.progress})>"
+        return (
+            f"<CourseEnrollment("
+            f"user_id={self.user_id},"
+            f"channel_id={self.channel_id},"
+            f"guild_id={self.guild_id}"
+            ")>"
+        )

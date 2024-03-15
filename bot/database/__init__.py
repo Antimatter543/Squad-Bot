@@ -17,10 +17,12 @@ class DBConfig:
     port = os.getenv("DB_PORT", "5432")
     dockerservice = os.getenv("DB_DOCKER_SERVICE_NAME", None)
 
+    def __init__(self) -> None:
+        self._dbhost = f"{self.host}:{self.port}" if self.dockerservice is None else self.dockerservice
+        self.uri = f"postgresql+asyncpg://{self.user}:{self.password}@{self._dbhost}/{self.name}"
+
 
 dbconfig = DBConfig()
 
-_dbhost = f"{dbconfig.host}:{dbconfig.port}" if dbconfig.dockerservice is None else dbconfig.dockerservice
-
-engine = create_async_engine(f"postgresql+asyncpg://{dbconfig.user}:{dbconfig.password}@{_dbhost}/{dbconfig.name}")
+engine = create_async_engine(dbconfig.uri)
 Session = sessionmaker(engine, class_=AsyncSession)
