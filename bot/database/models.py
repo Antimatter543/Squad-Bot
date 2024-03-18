@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, backref, relationship
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, DateTime, ForeignKey, ForeignKeyConstraint, Identity
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 from bot.database import Base
 
@@ -98,8 +98,16 @@ class CourseChannel(Base):
 
 class CourseEnrollment(Base):
     __tablename__ = "dc_course_enrollments"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["channel_id", "guild_id"], ["dc_course_channels.channel_id", "dc_course_channels.guild_id"]
+        ),
+        {},
+    )
+
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    channel_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("dc_course_channels.channel_id"), primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
     channel = relationship(

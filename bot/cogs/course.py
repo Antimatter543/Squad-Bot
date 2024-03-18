@@ -149,7 +149,7 @@ class course(commands.Cog):
                     course_code=channel.name,
                     do_not_reset=False,
                 )
-                await session.add(cnl)
+                session.add(cnl)
                 await session.commit()
 
         def get_position(channels: list[discord.abc.GuildChannel], channel_name: str) -> int:
@@ -310,7 +310,7 @@ class course(commands.Cog):
                 guild_id=guild.id,
             )
             session.add(enrollment)
-            session.commit()
+            await session.commit()
         await interaction.followup.send(
             f"Successfully enrolled in {course_code}",
             embed=self.get_text_channel_stats(channel),
@@ -347,8 +347,8 @@ class course(commands.Cog):
                 .where(CourseEnrollment.channel_id == channel.id)
                 .where(CourseEnrollment.guild_id == guild.id)
             )
-            session.execute(stmt)
-            session.commit()
+            await session.execute(stmt)
+            await session.commit()
         await interaction.followup.send(
             f"Successfully dropped {course_code}",
             embed=self.get_text_channel_stats(channel),
@@ -482,7 +482,7 @@ class course(commands.Cog):
                 channel = await self.get_text_channel(guild, channel_id=channel.channel_id)
                 # delete old channels
                 if channel is None:
-                    session.delete(channel)
+                    await session.delete(channel)
                     continue
                 db_channel_ids.append(channel.id)
                 if channel.name != channel.course_code:
@@ -499,7 +499,7 @@ class course(commands.Cog):
                 # remove old enrollments
                 for enrollment in enrollments_db:
                     if enrollment.user_id not in channel_enrollment_ids:
-                        session.delete(enrollment)
+                        await session.delete(enrollment)
                     else:
                         db_enrollment_ids.append(enrollment.user_id)
                 # add new enrollments
@@ -571,8 +571,8 @@ class course(commands.Cog):
                 .where(CourseEnrollment.user_id == user.id)
                 .where(CourseEnrollment.guild_id == guild.id)
             )
-            session.execute(stmt)
-            session.commit()
+            await session.execute(stmt)
+            await session.commit()
         await interaction.followup.send(
             f"Successfully removed all enrollments for {user} for {guild.name}",
             ephemeral=True,
