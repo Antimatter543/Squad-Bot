@@ -264,7 +264,7 @@ class statistics(commands.Cog):
         name = user.display_name
         avatar = user.display_avatar
         embed = await self.get_statistics(uid, name, avatar)
-        await interaction.followup.send(embed=embed, ephemeral=True, delete_after=120, mention_author=False)
+        await interaction.followup.send(embed=embed, ephemeral=True, mention_author=False)
 
     @stats_group.command(description="Check if this user has screamed yet today")
     @app_commands.guild_only()
@@ -278,7 +278,7 @@ class statistics(commands.Cog):
 
         uid = user.id
         msg = await self.get_has_screamed(uid, start)
-        await interaction.followup.send(msg, ephemeral=True, delete_after=120, mention_author=False)
+        await interaction.followup.send(msg, ephemeral=True, mention_author=False)
 
     async def get_user(self, aid):
         class UnknownUser:
@@ -373,14 +373,14 @@ class statistics(commands.Cog):
             await interaction.followup.send(
                 "You need to confirm that you want to save your streak by explicitly setting the value to true.",
                 ephemeral=True,
-                delete_after=120,
             )
             return
         user = interaction.user
         row = await self.get_screams(user.id)
         if row is None:
             await interaction.followup.send(
-                f"{user.display_name} has no stats to save.", ephemeral=True, delete_after=120
+                f"{user.display_name} has no stats to save.",
+                ephemeral=True,
             )
             return
         today = self.today
@@ -391,14 +391,14 @@ class statistics(commands.Cog):
             scream_time = round(datetime.timestamp(user.sc_daily))
             if user.sc_daily > yesterday:
                 await interaction.followup.send(
-                    f"You do not need to save your streak, scream to continue it", ephemeral=True, delete_after=120
+                    f"You do not need to save your streak, scream to continue it",
+                    ephemeral=True,
                 )
                 return
             if user.sc_daily < two_days_ago:
                 await interaction.followup.send(
                     f"Your streak is too old to save (last scream was <t:{scream_time}:R>.), scream to start a new one",
                     ephemeral=True,
-                    delete_after=120,
                 )
                 return
             if row.sc_streak_keeper > six_months_ago:
@@ -406,19 +406,18 @@ class statistics(commands.Cog):
                 await interaction.followup.send(
                     f"You can only save your streak once every 6 months (lasted saved <t:{save_time}:R>), scream to continue it",
                     ephemeral=True,
-                    delete_after=120,
                 )
                 return
             if row.sc_streak < 30:
                 await interaction.followup.send(
-                    f"Your streak is too short to save, scream to start a new one", ephemeral=True, delete_after=120
+                    f"Your streak is too short to save, scream to start a new one",
+                    ephemeral=True,
                 )
                 return
             if confirm == "Check":
                 await interaction.followup.send(
                     f"Your streak is {row.sc_streak} days long, you can save it by sacrificing 30 days of your previous streak.\nYour last scream was <t:{scream_time}:R>.",
                     ephemeral=True,
-                    delete_after=120,
                 )
                 return
             async with self.bot.session as session:
@@ -429,7 +428,6 @@ class statistics(commands.Cog):
             await interaction.followup.send(
                 f"Your streak has been saved, you lost 30 days but kept the streak.",
                 ephemeral=True,
-                delete_after=120,
                 embed=await self.get_statistics(user.id, user.display_name, user.display_avatar),
             )
 
@@ -450,9 +448,7 @@ class statistics(commands.Cog):
         async with self.bot.session as session:
             row = await session.get(Screams, user.id)
             if row is None:
-                await interaction.followup.send(
-                    f"{user.display_name} has no stats to override.", ephemeral=True, delete_after=120
-                )
+                await interaction.followup.send(f"{user.display_name} has no stats to override.", ephemeral=True)
                 return
             if total is not None:
                 row.sc_total = total

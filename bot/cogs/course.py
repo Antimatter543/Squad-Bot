@@ -106,7 +106,7 @@ class course(commands.Cog):
         :param channel_name: the name of the channel, defaults to None
         :return: channel or None if no channel exists
         """
-        return self._get_channel(guild, channel_id, channel_name)
+        return await self._get_channel(guild, channel_id, channel_name)
 
     async def get_category(
         self, guild: discord.Guild, channel_id: Optional[int] = None, channel_name: Optional[str] = None
@@ -118,7 +118,7 @@ class course(commands.Cog):
         :param name: the name of the category to get
         :return: the category
         """
-        return self._get_channel(guild, channel_id, channel_name, is_category=True)
+        return await self._get_channel(guild, channel_id, channel_name, is_category=True)
 
     async def create_channel(
         self,
@@ -267,7 +267,7 @@ class course(commands.Cog):
             async with session.get(uri, headers=headers) as resp:
                 if resp.status != 200:
                     return False
-                soup = BeautifulSoup(await resp.content, "html.parser")
+                soup = BeautifulSoup(await resp.content.read(), "html.parser")
                 verified = soup.find(id="course-notfound") is None
                 # keep a log of the verification to avoid spamming the site
                 self.verify_log[course_code] = {"result": verified, "time": now}
@@ -288,7 +288,6 @@ class course(commands.Cog):
             await interaction.followup.send(
                 f"Invalid course code: {course_code}",
                 ephemeral=True,
-                delete_after=30,
                 mention_author=False,
             )
             return
@@ -297,7 +296,6 @@ class course(commands.Cog):
             await interaction.followup.send(
                 f"Invalid course descriptor: {descriptor}. Must be one of {', '.join(self.descriptors)}.",
                 ephemeral=True,
-                delete_after=30,
                 mention_author=False,
             )
             return
@@ -315,7 +313,6 @@ class course(commands.Cog):
             f"Successfully enrolled in {course_code}",
             embed=self.get_text_channel_stats(channel),
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -334,7 +331,6 @@ class course(commands.Cog):
             await interaction.followup.send(
                 f"Invalid course code: {course_code}",
                 ephemeral=True,
-                delete_after=30,
                 mention_author=False,
             )
             return
@@ -353,7 +349,6 @@ class course(commands.Cog):
             f"Successfully dropped {course_code}",
             embed=self.get_text_channel_stats(channel),
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -371,7 +366,6 @@ class course(commands.Cog):
             await interaction.followup.send(
                 f"Invalid course code: {course_code}",
                 ephemeral=True,
-                delete_after=30,
                 mention_author=False,
             )
             return
@@ -379,7 +373,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             embed=self.get_text_channel_stats(channel),
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -398,7 +391,6 @@ class course(commands.Cog):
             await interaction.followup.send(
                 "No such channel exists yet.",
                 ephemeral=True,
-                delete_after=30,
                 mention_author=False,
             )
             return
@@ -406,7 +398,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             f"Successfully reset {channel.name}",
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -430,7 +421,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             "Successfully reset all course chats",
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -453,7 +443,6 @@ class course(commands.Cog):
                 await interaction.followup.send(
                     "No such channel exists yet.",
                     ephemeral=True,
-                    delete_after=30,
                     mention_author=False,
                 )
                 return
@@ -462,7 +451,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             f"Successfully added {channel.name} to the reset exception list",
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -535,7 +523,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             "Successfully synced all course channels",
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -576,7 +563,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             f"Successfully removed all enrollments for {user} for {guild.name}",
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
@@ -602,7 +588,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             embed=embed,
             ephemeral=True,
-            delete_after=30,
             mention_author=False,
         )
 
