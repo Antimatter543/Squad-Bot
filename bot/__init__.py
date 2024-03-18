@@ -1,6 +1,7 @@
 import logging
 import os
-from datetime import datetime
+import traceback
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
 import discord
@@ -21,7 +22,7 @@ class Bot(commands.Bot):
         """
         super().__init__(*args, **kwargs)
 
-        self.uptime = datetime.utcnow()
+        self.uptime = datetime.now(timezone.utc)
 
         self.load_enviroment()
         self.configure_logging()
@@ -175,7 +176,7 @@ class Bot(commands.Bot):
         if command is None and interaction.message is not None:
             command = interaction.message.content
         else:
-            command = "Unkown"
+            command = "Unknown"
         self.log.info(f"{author} ({nick}) used command  {command}")
 
     def error_message(
@@ -188,27 +189,25 @@ class Bot(commands.Bot):
         :param error: error to generate message for
         :return: error message
         """
-        if isinstance(error, commands.BotMissingPermissions) or isinstance(
-            error, app_commands.errors.BotMissingPermissions
-        ):
+        if isinstance(error, (commands.BotMissingPermissions, app_commands.errors.BotMissingPermissions)):
             msg = "Bot does not have sufficient permissions."
-        if isinstance(error, commands.CommandNotFound) or isinstance(error, app_commands.errors.CommandNotFound):
+        if isinstance(error, (commands.CommandNotFound, app_commands.errors.CommandNotFound)):
             msg = "Invalid command used."
-        elif isinstance(error, commands.CommandInvokeError) and isinstance(
-            error, app_commands.errors.CommandInvokeError
-        ):
-            msg = "Insufficent permission."
         elif isinstance(error, commands.MissingRequiredArgument):
             msg = f"Command is missing the required arguments.:\n{self.command_prefix}{command.qualified_name} {command.signature}"
         elif isinstance(error, app_commands.errors.CommandOnCooldown):
             msg = f'Command "{command.name}" is on cooldown, you can use it in {round(error.retry_after, 2)} seconds.'
-
+        elif isinstance(error, (commands.MissingPermissions, app_commands.errors.MissingPermissions)):
+            msg = "You do not have sufficient permissions."
         else:
             msg = f"An error occured:\n{error}"
+            # add stack trace if in debug mode
+            if self.config.debug:
+                msg += f"\n```{traceback.format_exc()}```"
             self.log.error(f"Command {command.qualified_name} caused an exception: {error}")
         embed = discord.Embed(
             title=f"**__Error__**",
-            description=msg,
+            description=msg[:4096],  # Discord message limit
             colour=discord.Colour.red(),
         )
         return embed
@@ -228,24 +227,6 @@ class Bot(commands.Bot):
         except discord.errors.NotFound:
             pass
         await ctx.reply(embed=self.error_message(command, error), delete_after=60)
-
-    async def cogs_manager(self, mode: str, cogs: list[str]) -> None:
-        """
-        Single function to manage extentions
-
-        :param mode: cog interaction
-        :param cogs: cog(s) to operate on
-        :raises TypeError: if mods is not in ["reload", "unload", "load"]
-        """
-        for cog in cogs:
-            if mode == "reload":
-                await self.reload_extension(cog)
-            elif mode == "unload":
-                await self.unload_extension(cog)
-            elif mode == "load":
-                await self.load_extension(cog)
-            else:
-                raise TypeError(f"Invalid operating mode: {mode}.")
 
     async def on_error(self, event: str, *args, **kwargs):
         self.log.exception("Event %r caused an exception", event)

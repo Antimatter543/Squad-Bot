@@ -90,7 +90,12 @@ class reminders(commands.GroupCog, name="reminders"):
                 await self.send_message()
 
         async def send_message(self):
-            channel = await self.bot.fetch_channel(self.cid)
+            try:
+                channel = await self.bot.fetch_channel(self.cid)
+            except discord.errors.NotFound:
+                self.bot.log.error(f"Channel {self.cid} not found")
+                return
+
             now = round(datetime.timestamp(now_tz()))
             then = round(datetime.timestamp(self.requested_time))
             embed = discord.Embed(

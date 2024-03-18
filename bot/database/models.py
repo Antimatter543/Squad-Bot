@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, ForeignKeyConstraint, Identity
+from sqlalchemy import BigInteger, DateTime, ForeignKeyConstraint, Identity
 from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 from bot.database import Base
@@ -82,7 +82,7 @@ class CourseChannel(Base):
     __tablename__ = "dc_course_channels"
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    course_code: Mapped[str]
+    course_code: Mapped[str] = mapped_column(primary_key=True)
     do_not_reset: Mapped[bool]
 
     def __repr__(self):
@@ -101,7 +101,8 @@ class CourseEnrollment(Base):
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["channel_id", "guild_id"], ["dc_course_channels.channel_id", "dc_course_channels.guild_id"]
+            ["channel_id", "guild_id", "course_code"],
+            ["dc_course_channels.channel_id", "dc_course_channels.guild_id", "dc_course_channels.course_code"],
         ),
         {},
     )
@@ -109,10 +110,11 @@ class CourseEnrollment(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    course_code: Mapped[str] = mapped_column(primary_key=True)
 
     channel = relationship(
         "CourseChannel",
-        foreign_keys=[channel_id, guild_id],
+        foreign_keys=[channel_id, guild_id, course_code],
         backref=backref("dc_course_enrollments", cascade="all, delete-orphan"),
     )
 
@@ -122,5 +124,22 @@ class CourseEnrollment(Base):
             f"user_id={self.user_id},"
             f"channel_id={self.channel_id},"
             f"guild_id={self.guild_id}"
+            f"course_code={self.course_code}"
+            ")>"
+        )
+
+
+class CourseConfig(Base):
+    __tablename__ = "dc_course_config"
+    guild_id = mapped_column(BigInteger, primary_key=True)
+    auto_delete: Mapped[Optional[bool]]
+    auto_delete_ignore_admins: Mapped[Optional[bool]]
+
+    def __repr__(self):
+        return (
+            f"<CourseConfig("
+            f"guild_id={self.guild_id},"
+            f"auto_delete={self.auto_delete},"
+            f"auto_delete_ignore_admins={self.auto_delete_ignore_admins}"
             ")>"
         )

@@ -10,6 +10,7 @@ from discord.ext import commands
 from sqlalchemy import func, select
 
 from bot.database.models import Screams, StatisticsConfig
+from bot.lib import DefaultDiscordObject
 from bot.lib.date import epoch, now_tz
 
 cog_name = "statistics"
@@ -17,18 +18,14 @@ cog_name = "statistics"
 
 class statistics(commands.Cog):
     class Config:
-        class DefaultDiscordObject:
-            def __init__(self) -> None:
-                self.id = None
-
         def __init__(self) -> None:
             self.regexp_primary = re.compile(r"[aA][arRgGAhH]{" + re.escape(str(randint(5, 15))) + r",}")
             self.regexp_secondary = re.compile(r":scream1:")
-            self.channel = self.DefaultDiscordObject()
+            self.channel = DefaultDiscordObject()
             self.minor_threshold = 100
             self.major_threshold = 250
-            self.minor_role = self.DefaultDiscordObject()
-            self.major_role = self.DefaultDiscordObject()
+            self.minor_role = DefaultDiscordObject()
+            self.major_role = DefaultDiscordObject()
 
         @classmethod
         async def from_row(cls, bot: commands.Bot, row: StatisticsConfig):
@@ -46,8 +43,11 @@ class statistics(commands.Cog):
                 guild: discord.Guild | None = await bot.fetch_guild(row.guild_id)
                 if guild is None:
                     return obj
-                if (channel := await guild.fetch_channel(row.channel_id)) is not None:
+                try:
+                    channel = await guild.fetch_channel(row.channel_id)
                     obj.channel = channel
+                except discord.errors.NotFound:
+                    pass
                 if (minor_role := guild.get_role(row.minor_role_id)) is not None:
                     obj.minor_role = minor_role
                 if (major_role := guild.get_role(row.major_role_id)) is not None:
@@ -113,7 +113,7 @@ class statistics(commands.Cog):
 
     async def enroll(self, guild_id):
         async with self.bot.session as session:
-            self.log.info(f"Enrolling guild {guild_id}")
+            self.log.info(f"{cog_name} - Enrolling guild {guild_id}")
             row = await session.get(StatisticsConfig, guild_id)
             if row is None:
                 return
@@ -264,7 +264,7 @@ class statistics(commands.Cog):
         name = user.display_name
         avatar = user.display_avatar
         embed = await self.get_statistics(uid, name, avatar)
-        await interaction.followup.send(embed=embed, ephemeral=True, mention_author=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @stats_group.command(description="Check if this user has screamed yet today")
     @app_commands.guild_only()
@@ -278,7 +278,7 @@ class statistics(commands.Cog):
 
         uid = user.id
         msg = await self.get_has_screamed(uid, start)
-        await interaction.followup.send(msg, ephemeral=True, mention_author=False)
+        await interaction.followup.send(msg, ephemeral=True)
 
     async def get_user(self, aid):
         class UnknownUser:
@@ -291,7 +291,7 @@ class statistics(commands.Cog):
         try:
             user = await self.bot.fetch_user(aid)
             user = UnknownUser() if user is None else user
-        except Exception:
+        except discord.errors.NotFound:
             user = UnknownUser()
         return user
 
@@ -323,9 +323,7 @@ class statistics(commands.Cog):
 
         now = round(datetime.timestamp(now_tz()))
         header = "---{ Scream Leaderboard }---"
-        await interaction.response.send_message(
-            f"{header}\nLoading... since <t:{now}:R>", ephemeral=False, mention_author=False
-        )
+        await interaction.response.send_message(f"{header}\nLoading... since <t:{now}:R>", ephemeral=False)
 
         embed = discord.Embed(title=f"{header}", description=f"The top screamers", color=discord.Color.darker_grey())
         embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1043839508887634010.webp?size=96&quality=lossless")
@@ -460,7 +458,7 @@ class statistics(commands.Cog):
                 row.sc_daily = now_tz()
             session.add(row)
             await session.commit()
-        await interaction.followup.send(f"Updated {user.display_name}'s stats.", ephemeral=True, mention_author=False)
+        await interaction.followup.send(f"Updated {user.display_name}'s stats.", ephemeral=True)
 
 
 async def setup(bot):

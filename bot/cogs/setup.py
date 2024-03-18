@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.database.models import StatisticsConfig
+from bot.database.models import CourseConfig, StatisticsConfig
 
 cog_name = "setup"
 
@@ -124,6 +124,65 @@ class setupCop(commands.Cog):
             embed.add_field(name="Major Threshold", value=module.major_threshold)
         if module.major_role.id is not None:
             embed.add_field(name="Major Role", value=module.major_role.mention)
+
+        await interaction.followup.send(embed=embed)
+
+    @setup_group.command(
+        description="Configure the course feature",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def course(
+        self,
+        interaction: discord.Interaction,
+        auto_delete: Optional[bool] = None,
+        auto_delete_ignore_admins: Optional[bool] = None,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        module_name = "course"
+
+        if (modules := self.bot.modules.get(module_name)) is None:
+            return await interaction.followup.send(f"Error: {module_name} module not loaded")
+
+        if (module := modules.get(interaction.guild_id)) is None:
+            return await interaction.followup.send(
+                f"Error: {module_name} module not loaded in {interaction.guild.name}"
+            )
+
+        attrs = [
+            "auto_delete",
+            "auto_delete_ignore_admins",
+        ]
+
+        for attr in attrs:
+            if (value := locals()[attr]) is not None:
+                setattr(module, attr, value)
+
+        # Save to database
+        async with self.bot.session as session:
+            row = await session.get(CourseConfig, interaction.guild_id)
+            auto_delete = auto_delete if auto_delete is not None else module.auto_delete
+            auto_delete_ignore_admins = (
+                auto_delete_ignore_admins if auto_delete_ignore_admins is not None else module.auto_delete_ignore_admins
+            )
+            if row is None:
+                row = CourseConfig(
+                    guild_id=interaction.guild_id,
+                    auto_delete=auto_delete,
+                    auto_delete_ignore_admins=auto_delete_ignore_admins,
+                )
+            else:
+                row.auto_delete = auto_delete
+                row.auto_delete_ignore_admins = auto_delete_ignore_admins
+            session.add(row)
+            await session.commit()
+        # Send response
+        embed = discord.Embed(title=f"{module_name}", color=discord.Color.magenta())
+
+        if module.auto_delete is not None:
+            embed.add_field(name="Auto Delete Channels", value=module.auto_delete)
+        if module.auto_delete_ignore_admins is not None:
+            embed.add_field(name="Audo Delete: Ignore Admins", value=module.auto_delete_ignore_admins)
 
         await interaction.followup.send(embed=embed)
 

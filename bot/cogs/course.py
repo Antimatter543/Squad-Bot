@@ -9,13 +9,42 @@ from discord import app_commands
 from discord.ext import commands
 from sqlalchemy import Sequence, delete, select
 
-from bot.database.models import CourseChannel, CourseEnrollment
+from bot.database.models import CourseChannel, CourseConfig, CourseEnrollment
 from bot.lib.date import now_tz
 
 cog_name = "course"
 
 
 class course(commands.Cog):
+    class Config:
+        def __init__(self) -> None:
+            self.auto_delete = True
+            self.auto_delete_ignore_admins = False
+
+        @classmethod
+        async def from_row(cls, bot: commands.Bot, row: CourseConfig):
+            """
+            Create a new Config object from a row in the database
+
+            :param commands.Bot bot: the bot instance
+            :param CourseConfig row: the stored DB config
+            :raises ValueError: if the row is None
+            """
+            if row is None:
+                raise ValueError("Could not find a row in the database for this guild.")
+            obj = cls()
+            try:
+                guild: discord.Guild | None = await bot.fetch_guild(row.guild_id)
+                if guild is None:
+                    return obj
+                obj.auto_delete = row.auto_delete
+                obj.auto_delete_ignore_admins = row.auto_delete_ignore_admins
+            except discord.Forbidden:
+                bot.log.warning(f"Could not find a channel or role for guild {row.guild_id}")
+                pass
+
+            return obj
+
     course_group = app_commands.Group(name="course", description="Course management")
     enrollments_group = app_commands.Group(name="enrollment", description="Enrollment management")
 
@@ -39,6 +68,10 @@ class course(commands.Cog):
         self.log.info(f"Loaded {self.__class__.__name__}")
         self.verify_log = {}
 
+        bot.modules[cog_name] = {}
+        for guild in bot.guilds:
+            bot.modules[cog_name][guild.id] = self.Config()
+
     async def _init(self):
         """
         Any initialisation code that needs to be run after the bot is ready or
@@ -54,18 +87,42 @@ class course(commands.Cog):
         async with self.bot.db.begin() as conn:
             await conn.run_sync(CourseChannel.__table__.create, checkfirst=True)
             await conn.run_sync(CourseEnrollment.__table__.create, checkfirst=True)
+            await conn.run_sync(CourseConfig.__table__.create, checkfirst=True)
 
-    def parse_course_code(self, course_code: str) -> tuple[str, int]:
+        for guild in self.bot.guilds:
+            await self.enroll(guild.id)
+
+    async def enroll(self, guild_id):
+        async with self.bot.session as session:
+            self.log.info(f"{cog_name} - Enrolling guild {guild_id}")
+            row = await session.get(CourseConfig, guild_id)
+            if row is None:
+                return
+            self.bot.modules[cog_name][guild_id] = await self.Config.from_row(self.bot, row)
+
+    def format_channel_name(self, name: str, is_category=False) -> str:
+        """
+        Format the channel name to be uppercase if it is a category.
+        else lowercase
+        """
+        return name.upper() if is_category else name.lower()
+
+    def parse_course_code(self, course_code: str, *, allow_category=False) -> tuple[str, int]:
         """
         Parse the course code into its components.
 
         :param course_code: the course code to parse
         :return: the course code components
         """
-        match = re.match(r"([A-Z]{4})([0-9]{4})", course_code)
+        match = re.match(r"([A-Za-z]{4})([0-9]{4})", course_code)
+        if allow_category and match is None:
+            match = re.match(r"([A-Za-z]{4})", course_code)
         if match is None:
-            raise ValueError(f"Invalid course code: {course_code}")
-        return match.groups()
+            raise commands.ArgumentParsingError(f"Invalid course code: {course_code}")
+        if allow_category:
+            return match.group(1), 0
+        code, number = match.groups()
+        return self.format_channel_name(code, is_category=True), int(number)
 
     async def _get_channel(
         self,
@@ -84,10 +141,13 @@ class course(commands.Cog):
         :return: channel or None if no channel exists
         """
         if channel_id is not None:
-            channel = await guild.fetch_channel(channel_id)
-            if channel is not None:
+            try:
+                channel = await guild.fetch_channel(channel_id)
                 return channel
+            except discord.errors.NotFound:
+                return None
         if channel_name is not None:
+            channel_name = self.format_channel_name(channel_name, is_category)
             channels = guild.text_channels if not is_category else guild.categories
             for channel in channels:
                 if channel.name == channel_name:
@@ -153,17 +213,21 @@ class course(commands.Cog):
                 await session.commit()
 
         def get_position(channels: list[discord.abc.GuildChannel], channel_name: str) -> int:
-            return sorted(channels + [channel_name]).index(channel_name)
+            names = [ch.name for ch in channels]
+            return sorted(names + [channel_name]).index(channel_name)
 
+        channel_name = self.format_channel_name(channel_name, is_category)
         if is_category:
-            overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False)}
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                self.bot.user: discord.PermissionOverwrite(view_channel=True),
+            }
             categories = guild.categories
             course_categories = [cat for cat in categories if cat.name in self.descriptors]
             position = get_position(course_categories, channel_name) + (len(categories) - len(course_categories))
             channel = await guild.create_category(channel_name, overwrites=overwrites, position=position)
             await add_channel(channel)
             return channel
-
         descriptor, _ = self.parse_course_code(channel_name)
         category = await self.get_category(guild, channel_name=descriptor)
         if category is None:
@@ -211,6 +275,10 @@ class course(commands.Cog):
         channel = await self.get_text_channel(guild, channel_id=channel_id)
         if channel is not None:
             return channel
+        # check if it exists by name
+        channel = await self.get_text_channel(guild, channel_name=course_code)
+        if channel is not None:
+            return channel
         # If the channel does not exist, create it
         return await self.create_channel(guild, course_code)
 
@@ -221,8 +289,9 @@ class course(commands.Cog):
         :param course_code: the course code to get
         :return: the course code
         """
+        code = self.format_channel_name(course_code)
         async with self.bot.session as session:
-            stmt = select(CourseChannel).where(CourseChannel.course_code == course_code.upper())
+            stmt = select(CourseChannel).where(CourseChannel.course_code == code)
             row = (await session.scalars(stmt)).first()
             return row
 
@@ -235,9 +304,14 @@ class course(commands.Cog):
         """
         if channel is None:
             return discord.Embed(title="No such channel exists yet.")
+        members = [
+            member
+            for member in channel.members
+            if member.bot is False and member.guild_permissions.administrator is False
+        ]
         return discord.Embed(
             title=f"{channel.name}",
-            description=f"Members: {len(channel.members)}",
+            description=f"Members: {len(members)}",
         )
 
     def get_course_channels(self, guild: discord.Guild) -> list[discord.TextChannel]:
@@ -283,37 +357,41 @@ class course(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         user = interaction.user
         guild = interaction.guild
-        code = course_code.upper()
+        code = self.format_channel_name(course_code)
         if not await self.verify_course_code(code):
             await interaction.followup.send(
-                f"Invalid course code: {course_code}",
+                f"Invalid course code: {code}",
                 ephemeral=True,
-                mention_author=False,
             )
             return
-        descriptor, _ = self.parse_course_code(course_code)
+        descriptor, _ = self.parse_course_code(code)
         if descriptor not in self.descriptors:
             await interaction.followup.send(
                 f"Invalid course descriptor: {descriptor}. Must be one of {', '.join(self.descriptors)}.",
                 ephemeral=True,
-                mention_author=False,
             )
             return
         channel = await self.get_or_create_course_channel(guild, code)
-        channel.set_permissions(user, overwrite=discord.PermissionOverwrite(view_channel=True))
-        with self.bot.session as session:
+        if user in channel.members:
+            await interaction.followup.send(
+                f"You are already enrolled in {code}",
+                ephemeral=True,
+            )
+            return
+        await channel.set_permissions(user, overwrite=discord.PermissionOverwrite(view_channel=True))
+        async with self.bot.session as session:
             enrollment = CourseEnrollment(
                 user_id=user.id,
                 channel_id=channel.id,
                 guild_id=guild.id,
+                course_code=channel.name,
             )
             session.add(enrollment)
             await session.commit()
         await interaction.followup.send(
-            f"Successfully enrolled in {course_code}",
+            f"Successfully enrolled in {code}",
             embed=self.get_text_channel_stats(channel),
             ephemeral=True,
-            mention_author=False,
         )
 
     @course_group.command(name="drop", description="Dropping a course chat removes your access to that channel.")
@@ -326,17 +404,41 @@ class course(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         user = interaction.user
         guild = interaction.guild
-        code = course_code.upper()
+        code = self.format_channel_name(course_code)
         if not await self.verify_course_code(code):
             await interaction.followup.send(
-                f"Invalid course code: {course_code}",
+                f"Invalid course code: {code}",
                 ephemeral=True,
-                mention_author=False,
             )
             return
-        channel = await self.get_or_create_course_channel(guild, code)
-        channel.set_permissions(user, overwrite=None)
-        with self.bot.session as session:
+        channel = await self.get_text_channel(guild, channel_name=code)
+        if channel is None:
+            await interaction.followup.send(
+                f"No such channel exists yet.",
+                ephemeral=True,
+            )
+            return
+        if user not in channel.members:
+            await interaction.followup.send(
+                f"You are not enrolled in {code}",
+                ephemeral=True,
+            )
+            return
+        await channel.set_permissions(user, overwrite=None)
+        # check if we need to auto delete the channel
+        config = self.bot.modules[cog_name].get(guild.id)
+        if config is not None and config.auto_delete:
+            members = [member for member in channel.members if member.bot is False]
+            if config.auto_delete_ignore_admins is True:
+                members = [member for member in members if member.guild_permissions.administrator is False]
+            if len(members) == 0:
+                await self.delete_channel(channel)
+            # check if the category is empty and delete it if needed
+            descriptor, _ = self.parse_course_code(code)
+            category = await self.get_category(guild, channel_name=descriptor)
+            if len(category.text_channels) == 0:
+                await self.delete_channel(category)
+        async with self.bot.session as session:
             stmt = (
                 delete(CourseEnrollment)
                 .where(CourseEnrollment.user_id == user.id)
@@ -346,10 +448,9 @@ class course(commands.Cog):
             await session.execute(stmt)
             await session.commit()
         await interaction.followup.send(
-            f"Successfully dropped {course_code}",
+            f"Successfully dropped {code}",
             embed=self.get_text_channel_stats(channel),
             ephemeral=True,
-            mention_author=False,
         )
 
     @course_group.command(name="show", description="Show how many members are in a course chat.")
@@ -361,19 +462,17 @@ class course(commands.Cog):
     async def show_course(self, interaction: discord.Interaction, course_code: str):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
-        code = course_code.upper()
+        code = self.format_channel_name(course_code)
         if not await self.verify_course_code(code):
             await interaction.followup.send(
-                f"Invalid course code: {course_code}",
+                f"Invalid course code: {code}",
                 ephemeral=True,
-                mention_author=False,
             )
             return
         channel = await self.get_text_channel(guild, channel_name=code)
         await interaction.followup.send(
             embed=self.get_text_channel_stats(channel),
             ephemeral=True,
-            mention_author=False,
         )
 
     async def reset_course(self, channel: discord.TextChannel) -> None:
@@ -391,14 +490,12 @@ class course(commands.Cog):
             await interaction.followup.send(
                 "No such channel exists yet.",
                 ephemeral=True,
-                mention_author=False,
             )
             return
         self.reset_course(channel)
         await interaction.followup.send(
             f"Successfully reset {channel.name}",
             ephemeral=True,
-            mention_author=False,
         )
 
     @course_group.command(name="reset_all", description="(Admin Only) Remove all messages from all course chats.")
@@ -421,7 +518,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             "Successfully reset all course chats",
             ephemeral=True,
-            mention_author=False,
         )
 
     @course_group.command(
@@ -443,7 +539,6 @@ class course(commands.Cog):
                 await interaction.followup.send(
                     "No such channel exists yet.",
                     ephemeral=True,
-                    mention_author=False,
                 )
                 return
             row.do_not_reset = exception
@@ -451,7 +546,6 @@ class course(commands.Cog):
         await interaction.followup.send(
             f"Successfully added {channel.name} to the reset exception list",
             ephemeral=True,
-            mention_author=False,
         )
 
     @course_group.command(name="sync", description="(Admin Only) Sync the current course channels with the database.")
@@ -466,22 +560,24 @@ class course(commands.Cog):
             channels_db: Sequence[CourseChannel] = (await session.scalars(stmt)).all()
             db_channel_ids = []
             # manage old channels
-            for channel in channels_db:
-                channel = await self.get_text_channel(guild, channel_id=channel.channel_id)
+            for channel_db in channels_db:
+                channel = await self.get_text_channel(guild, channel_id=channel_db.channel_id)
                 # delete old channels
                 if channel is None:
-                    await session.delete(channel)
+                    await session.delete(channel_db)
                     continue
                 db_channel_ids.append(channel.id)
-                if channel.name != channel.course_code:
-                    channel.course_code = channel.name
+                if channel_db.course_code != channel.name:
+                    channel_db.course_code = channel.name
                 enroll_stmt = (
                     select(CourseEnrollment)
                     .where(CourseEnrollment.channel_id == channel.id)
                     .where(CourseEnrollment.guild_id == guild.id)
                 )
                 enrollments_db: Sequence[CourseEnrollment] = (await session.scalars(enroll_stmt)).all()
-                channel_enrollment_ids = [user.id for user in channel.members]
+                channel_enrollment_ids = [
+                    user.id for user in channel.members if not user.bot and not user.guild_permissions.administrator
+                ]
 
                 db_enrollment_ids = []
                 # remove old enrollments
@@ -497,33 +593,36 @@ class course(commands.Cog):
                             user_id=uid,
                             channel_id=channel.id,
                             guild_id=guild.id,
+                            course_code=channel.name,
                         )
                         session.add(enrollment)
             # add new channels
             channels = self.get_course_channels(guild)
+            channels += [channel for channel in guild.categories if channel.name in self.descriptors]
             for channel in channels:
-                if len(channel.members) == 0:
-                    continue
                 if channel.id not in db_channel_ids:
-                    channel = CourseChannel(
+                    channel_db = CourseChannel(
                         channel_id=channel.id,
                         guild_id=guild.id,
                         course_code=channel.name,
                         do_not_reset=False,
                     )
-                    session.add(channel)
-                    for member in channel.members:
-                        enrollment = CourseEnrollment(
-                            user_id=member.id,
-                            channel_id=channel.id,
-                            guild_id=guild.id,
-                        )
-                        session.add(enrollment)
+                    session.add(channel_db)
+                    if isinstance(channel, discord.TextChannel):
+                        for member in channel.members:
+                            if member.bot or member.guild_permissions.administrator:
+                                continue
+                            enrollment = CourseEnrollment(
+                                user_id=member.id,
+                                channel_id=channel.id,
+                                guild_id=guild.id,
+                                course_code=channel.name,
+                            )
+                            session.add(enrollment)
             await session.commit()
         await interaction.followup.send(
             "Successfully synced all course channels",
             ephemeral=True,
-            mention_author=False,
         )
 
     @course_group.command(name="clean", description="(Admin Only) Remove any courses that have no enrollment.")
@@ -543,6 +642,22 @@ class course(commands.Cog):
                 enrollments: Sequence[CourseEnrollment] = (await session.scalars(stmt)).all()
                 if len(enrollments) == 0:
                     await self.delete_channel(channel)
+        await interaction.followup.send(
+            "Successfully cleaned all course channels",
+            ephemeral=True,
+        )
+
+    @course_group.command(name="delete", description="(Admin Only) Remove a course chat.")
+    @app_commands.guild_only()
+    @app_commands.checks.bot_has_permissions(manage_channels=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def delete_courses(self, interaction: discord.Interaction, channel: discord.abc.GuildChannel) -> None:
+        await interaction.response.defer(ephemeral=True)
+        descriptor, _ = self.parse_course_code(channel.name, allow_category=True)
+        if descriptor not in self.descriptors:
+            await interaction.followup.send(f"Cannot use this command to delete non-course channels.", ephemeral=True)
+            return
+        await self.delete_channel(channel)
 
     @enrollments_group.command(name="purge", description="(Admin Only) Remove all enrollments for user.")
     @app_commands.guild_only()
@@ -561,9 +676,7 @@ class course(commands.Cog):
             await session.execute(stmt)
             await session.commit()
         await interaction.followup.send(
-            f"Successfully removed all enrollments for {user} for {guild.name}",
-            ephemeral=True,
-            mention_author=False,
+            f"Successfully removed all enrollments for {user} for {guild.name}", ephemeral=True
         )
 
     @enrollments_group.command(name="list", description="(Admin Only) List all enrollments for user.")
@@ -585,11 +698,7 @@ class course(commands.Cog):
         for enrollment in enrollments:
             channel = await self.get_text_channel(guild, channel_id=enrollment.channel_id)
             embed.add_field(name=channel.name, value=f"ID: {channel.id}", inline=False)
-        await interaction.followup.send(
-            embed=embed,
-            ephemeral=True,
-            mention_author=False,
-        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
