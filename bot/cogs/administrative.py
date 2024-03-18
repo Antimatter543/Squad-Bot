@@ -17,35 +17,27 @@ class administrative(commands.Cog):
     admin_group = app_commands.Group(name="admin", description="Administrative commands")
 
     # Commands
-    @admin_group.command(
-        description="Loads a cog extension",
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.guild_only()
-    async def load(self, interaction: discord.Interaction, cog: str):
-        await interaction.response.defer(ephemeral=True)
-        await interaction.client.load_extension(f"cogs.{cog}")
-        await interaction.followup.send(f"Loaded {str(cog)}!", ephemeral=True)
 
-    @admin_group.command(
-        description="Unloads a cog extension",
-    )
+    @app_commands.command(name="cogs", description="Cog management")
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.guild_only()
-    async def unload(self, interaction: discord.Interaction, cog: str):
-        await interaction.response.defer(ephemeral=True)
-        await interaction.client.unload_extension(f"cogs.{cog}")
-        await interaction.followup.send(f"Unloaded {str(cog)}!", ephemeral=True)
-
-    @admin_group.command(
-        description="Reloads a cog extension",
+    @app_commands.choices(
+        action=[app_commands.Choice(name=str(i), value=i) for i in ["load", "unload", "reload"]],
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(
+        cog="The cog to manage",
+    )
     @app_commands.guild_only()
-    async def reload(self, interaction: discord.Interaction, cog: str):
+    async def cogs(self, interaction: discord.Interaction, action: str, cog: str):
+        """Cog management"""
         await interaction.response.defer(ephemeral=True)
-        await interaction.client.reload_extension(f"cogs.{cog}")
-        await interaction.followup.send(f"Reloaded {str(cog)}!", ephemeral=True)
+        match action:
+            case "load":
+                await interaction.client.load_extension(f"cogs.{cog}")
+            case "unload":
+                await interaction.client.unload_extension(f"cogs.{cog}")
+            case "reload":
+                await interaction.client.reload_extension(f"cogs.{cog}")
+        await interaction.followup.send(f"{action.capitalize()}ed {cog}!")
 
     @commands.command(description="Syncs the application tree")
     @commands.guild_only()
