@@ -1,4 +1,7 @@
-# UQCSC-Bot
+# UQCSC-Bot V2.0
+
+[![Discord](https://img.shields.io/discord/809997432011882516?color=blue&label=UQCS%20Discord&logo=discord)](https://discord.gg/JpjaB2FNdW)
+
 [![Python Version 3.10](https://img.shields.io/badge/python-3.10-blue.svg?logo=python&logoColor=yellow)](https://www.python.org/downloads/release/python-3100/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -7,7 +10,10 @@
 
 A somewhat complete discord bot template with example cogs that uses a Postgresql server as a storage mechanism.
 
-Primarly used for the [UQCS Courses Discord Server](https://discord.gg/JpjaB2FNdW).
+Primary used for the [UQCS Courses Discord Server](https://discord.gg/JpjaB2FNdW).
+
+[![Docker](https://img.shields.io/badge/Docker-test?logo=docker&color=grey)](https://www.docker.com/)  
+Docker files are included for easy deployment.
 
 ## Contributing
 
@@ -16,16 +22,17 @@ The use of the [flake8](https://pypi.org/project/flake8/) and [isort](https://py
 
 See [requirements-dev.txt](./bot/requirements-dev.txt).
 
-## Default Features
+## Main Features
  - Main bot
-   - Loading a configuration from an object or dictionary
+   - Configure with environment variables
    - File logging
    - PSQL Database connection
-   - Cogs manager
+   - Cogs manager / default commands
  - Cogs
    - Administrative
-     - Add or remove privileged roles
-     - Clear message
+     - manage cogs
+     - clear messages
+     - sync app commands
    - General
      - Fortune
      - Ping
@@ -34,7 +41,10 @@ See [requirements-dev.txt](./bot/requirements-dev.txt).
      - Determine how many times a particular message has been sent to a channel
      - Role based rewards
      - Leaderboard scoring system
-     - Crash Safe
+     - Configurable by discord message
    - Reminders
      - Create / Delete repeating or once off reminders
-     - Crash Safe
+   - Courses
+     - Enrol / Drop courses (channels)
+     - Auto delete empty channels
+     - database storage
