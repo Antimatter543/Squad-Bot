@@ -385,22 +385,22 @@ class statistics(commands.Cog):
         yesterday = today - timedelta(days=1)
         two_days_ago = today - timedelta(days=2)
         six_months_ago = today - timedelta(days=180)
-        if user.sc_daily < today:
-            scream_time = round(datetime.timestamp(user.sc_daily))
-            if user.sc_daily > yesterday:
+        if row.sc_daily < today:
+            scream_time = round(datetime.timestamp(row.sc_daily))
+            if row.sc_daily > yesterday:
                 await interaction.followup.send(
                     f"You do not need to save your streak, scream to continue it",
                     ephemeral=True,
                 )
                 return
-            if user.sc_daily < two_days_ago:
+            if row.sc_daily < two_days_ago:
                 await interaction.followup.send(
                     f"Your streak is too old to save (last scream was <t:{scream_time}:R>.), scream to start a new one",
                     ephemeral=True,
                 )
                 return
             if row.sc_streak_keeper > six_months_ago:
-                save_time = round(datetime.timestamp(user.sc_streak_keeper))
+                save_time = round(datetime.timestamp(row.sc_streak_keeper))
                 await interaction.followup.send(
                     f"You can only save your streak once every 6 months (lasted saved <t:{save_time}:R>), scream to continue it",
                     ephemeral=True,
