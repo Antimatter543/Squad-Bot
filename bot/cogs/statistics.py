@@ -257,14 +257,14 @@ class statistics(commands.Cog):
     @stats_group.command(name="user", description="Get the scream statistics for a user.")
     @app_commands.guild_only()
     async def user_stats(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         if user is None:
             user = interaction.user
         uid = user.id
         name = user.display_name
         avatar = user.display_avatar
         embed = await self.get_statistics(uid, name, avatar)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
     @stats_group.command(description="Check if this user has screamed yet today")
     @app_commands.guild_only()
@@ -353,7 +353,7 @@ class statistics(commands.Cog):
         embed.add_field(
             name="__Best historical daily streak__", value=f"{await build_message(bestStreakHistorical)}", inline=False
         )
-        await interaction.response.edit_message(content="", embed=embed)
+        await (await interaction.original_response()).edit(content="", embed=embed)
 
     @stats_group.command(
         name="savestreak", description="If you missed one day sacrifice 30 days of your previous streak to save it."
