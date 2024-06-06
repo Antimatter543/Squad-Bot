@@ -14,6 +14,7 @@ class Screams(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     sc_total: Mapped[int]
     sc_streak: Mapped[int]
+    sc_streak_last = Mapped[int]
     sc_best_streak: Mapped[int]
     sc_daily: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     sc_streak_keeper: Mapped[datetime] = mapped_column(DateTime(timezone=True))
