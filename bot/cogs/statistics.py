@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import Optional
 
 import discord
@@ -14,7 +14,7 @@ from bot.lib.date import epoch, get_tz, now_tz
 
 cog_name = "statistics"
 
-reset_time = datetime.time(hour=0, minute=0, second=0, microsecond=0, tzinfo=get_tz())
+reset_time = time(hour=0, minute=0, second=0, microsecond=0, tzinfo=get_tz())
 
 
 class statistics(commands.Cog):
