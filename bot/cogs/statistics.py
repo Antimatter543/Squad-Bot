@@ -139,6 +139,8 @@ class statistics(commands.Cog):
         async with self.bot.session as session:
             return await session.get(Screams, uid)
 
+    # region Listeners & Tasks
+
     @tasks.loop(time=reset_time)
     async def reset_streak(self):
         """
@@ -227,20 +229,10 @@ class statistics(commands.Cog):
             except Exception as e:
                 self.log.info(e)
 
-    async def get_statistics(self, uid, name, avatar) -> discord.Embed:
-        row = await self.get_screams(uid)
-        embed = discord.Embed(title="Scream Statistics", description="")
-        embed.set_author(name=f"{name}")
-        embed.set_thumbnail(url=f"{avatar}")
-        if row is not None:
-            embed.add_field(name="Total Screams", value=f"{row.sc_total}")
-            embed.add_field(name="Scream Streak", value=f"{row.sc_streak}")
-            embed.add_field(name="Best Scream Streak", value=f"{row.sc_best_streak}")
-        else:
-            embed.add_field(name="", value="No screams as of yet.")
-        return embed
+    # endregion
+    # region Embeds / Helpers
 
-    async def get_has_screamed(self, uid, prefix="", name="User") -> str:
+    async def has_screamed(self, uid, name="User") -> str:
         row = await self.get_screams(uid)
         if row is None:
             return f"{name} has not done any screaming yet."
@@ -249,57 +241,7 @@ class statistics(commands.Cog):
         else:
             msg = "have"
 
-        return f"{prefix}{msg} screamed today."
-
-    @app_commands.guild_only()
-    async def statistics_menu(self, interaction: discord.Interaction, user: discord.Member) -> None:
-        await interaction.response.defer(ephemeral=True)
-        uid = user.id
-        name = user.display_name
-        avatar = user.display_avatar
-        embed = await self.get_statistics(uid, name, avatar)
-        msg = await interaction.followup.send(embed=embed, ephemeral=True, wait=True)
-        await msg.delete(delay=120)
-
-    @app_commands.guild_only()
-    async def didiscream_menu(self, interaction: discord.Interaction, user: discord.Member) -> None:
-        await interaction.response.defer(ephemeral=True)
-        if user == interaction.user:
-            start = "You "
-        else:
-            start = "They "
-        uid = user.id
-        msg = await self.get_has_screamed(uid, start, user.display_name)
-        msg = await interaction.followup.send(content=msg, ephemeral=True, wait=True)
-        await msg.delete(delay=120)
-
-    # Commands ========================================================================================================
-
-    @stats_group.command(name="user", description="Get the scream statistics for a user.")
-    @app_commands.guild_only()
-    async def user_stats(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
-        await interaction.response.defer()
-        if user is None:
-            user = interaction.user
-        uid = user.id
-        name = user.display_name
-        avatar = user.display_avatar
-        embed = await self.get_statistics(uid, name, avatar)
-        await interaction.followup.send(embed=embed)
-
-    @stats_group.command(description="Check if this user has screamed yet today")
-    @app_commands.guild_only()
-    async def didiscream(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
-        await interaction.response.defer(ephemeral=True)
-        if user is None:
-            user = interaction.user
-            start = "You "
-        else:
-            start = "They "
-
-        uid = user.id
-        msg = await self.get_has_screamed(uid, start)
-        await interaction.followup.send(msg, ephemeral=True)
+        return f"They {msg} screamed today."
 
     async def get_user(self, aid):
         class UnknownUser:
@@ -316,10 +258,24 @@ class statistics(commands.Cog):
             user = UnknownUser()
         return user
 
-    @stats_group.command(description="Get the top void screamers in the server.")
-    @app_commands.checks.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
-    @app_commands.guild_only()
-    async def leaderboard(self, interaction: discord.Interaction):
+    async def embed_user_stats(self, user: discord.Member) -> discord.Embed:
+        uid = user.id
+        name = user.display_name
+        avatar = user.display_avatar
+
+        row = await self.get_screams(uid)
+        embed = discord.Embed(title="Scream Statistics", description="")
+        embed.set_author(name=f"{name}")
+        embed.set_thumbnail(url=f"{avatar}")
+        if row is not None:
+            embed.add_field(name="Total Screams", value=f"{row.sc_total}")
+            embed.add_field(name="Scream Streak", value=f"{row.sc_streak}")
+            embed.add_field(name="Best Scream Streak", value=f"{row.sc_best_streak}")
+        else:
+            embed.add_field(name="", value="No screams as of yet.")
+        return embed
+
+    async def embed_leaderboad(self) -> discord.Embed:
         top = 5
 
         async def build_message(rows):
@@ -342,9 +298,7 @@ class statistics(commands.Cog):
                 message += f"{emoji[i+1]}\u27F6 This could be you!\n"
             return message
 
-        now = round(datetime.timestamp(now_tz()))
         header = "---{ Scream Leaderboard }---"
-        await interaction.response.send_message(f"{header}\nLoading... since <t:{now}:R>", ephemeral=False)
 
         embed = discord.Embed(title=f"{header}", description="The top screamers", color=discord.Color.darker_grey())
         embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1043839508887634010.webp?size=96&quality=lossless")
@@ -374,7 +328,68 @@ class statistics(commands.Cog):
         embed.add_field(
             name="__Best historical daily streak__", value=f"{await build_message(bestStreakHistorical)}", inline=False
         )
-        await (await interaction.original_response()).edit(content="", embed=embed)
+        return embed
+
+    # endregion
+
+    # region Commands
+    # We use a base command and the create distinct app and text commands isntead of a
+    # hybrid command to have more control over command grouping
+
+    @stats_group.command(name="user", description="Get the scream statistics for a user.")
+    @app_commands.guild_only()
+    async def app_user_stats(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        await interaction.response.defer()
+        if user is None:
+            user = interaction.user
+        await interaction.followup.send(embed=self.embed_user_stats(user), ephemeral=True)
+
+    @commands.command(name="stats", description="Get the scream statistics for a user.")
+    @commands.guild_only()
+    async def text_user_stats(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        if user is None:
+            user = ctx.author
+        await ctx.send(embed=self.embed_user_stats(user))
+
+    @stats_group.command(description="Check if this user has screamed yet today")
+    @app_commands.guild_only()
+    async def app_didiscream(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        await interaction.response.defer(ephemeral=True)
+        if user is None:
+            user = interaction.user
+        uid = user.id
+        msg = await self.has_screamed(uid)
+        await interaction.followup.send(msg, ephemeral=True)
+
+    @commands.command(name="didiscream", description="Check if this user has screamed yet today")
+    @commands.guild_only()
+    async def text_didiscream(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        if user is None:
+            user = ctx.author
+        uid = user.id
+        msg = await self.has_screamed(uid)
+        await ctx.send(msg)
+
+    @stats_group.command(description="Get the top void screamers in the server.")
+    @app_commands.checks.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
+    @app_commands.guild_only()
+    async def leaderboard(self, interaction: discord.Interaction):
+        now = round(datetime.timestamp(now_tz()))
+        await interaction.response.send_message(f"Leaderboard Loading... since <t:{now}:R>", ephemeral=False)
+        await (await interaction.original_response()).edit(content="", embed=self.embed_leaderboad())
+
+    @commands.command(
+        name="leaderboard",
+        aliases=["screamtop", "top"],
+        description="Get the top void screamers in the server.",
+    )
+    @commands.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
+    @commands.guild_only()
+    async def text_leaderboard(self, ctx: commands.Context):
+        await ctx.send(embed=self.embed_leaderboad())
+
+    # endregion
+    # region App Only Commands
 
     @stats_group.command(
         name="savestreak", description="If you missed one day sacrifice 30 days of your previous streak to save it."
@@ -447,7 +462,7 @@ class statistics(commands.Cog):
         await interaction.followup.send(
             "Your streak has been saved, you lost 30 days but kept the streak.",
             ephemeral=True,
-            embed=await self.get_statistics(user.id, user.display_name, user.display_avatar),
+            embed=await self.embed_user_stats(user.id, user.display_name, user.display_avatar),
         )
 
     @stats_group.command(name="override", description="Override a users existing stats.")
@@ -480,6 +495,24 @@ class statistics(commands.Cog):
             session.add(row)
             await session.commit()
         await interaction.followup.send(f"Updated {user.display_name}'s stats.", ephemeral=True)
+
+    # region Menus
+
+    @app_commands.guild_only()
+    async def statistics_menu(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        await interaction.response.defer(ephemeral=True)
+        msg = await interaction.followup.send(embed=self.embed_user_stats(user), ephemeral=True, wait=True)
+        await msg.delete(delay=120)
+
+    @app_commands.guild_only()
+    async def didiscream_menu(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        await interaction.response.defer(ephemeral=True)
+        uid = user.id
+        msg = await self.has_screamed(uid)
+        msg = await interaction.followup.send(content=msg, ephemeral=True, wait=True)
+        await msg.delete(delay=120)
+
+    # endregion
 
 
 async def setup(bot):
