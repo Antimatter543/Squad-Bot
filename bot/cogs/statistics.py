@@ -383,7 +383,7 @@ class statistics(commands.Cog):
         aliases=["screamtop", "top"],
         description="Get the top void screamers in the server.",
     )
-    @commands.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
+    @commands.cooldown(1, 5.0, type=commands.BucketType.user)
     @commands.guild_only()
     async def text_leaderboard(self, ctx: commands.Context):
         await ctx.send(embed=self.embed_leaderboad())
