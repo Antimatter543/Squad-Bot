@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta, time
+from datetime import datetime, time, timedelta
 from typing import Optional
 
 import discord
@@ -342,14 +342,14 @@ class statistics(commands.Cog):
         await interaction.response.defer()
         if user is None:
             user = interaction.user
-        await interaction.followup.send(embed=self.embed_user_stats(user), ephemeral=True)
+        await interaction.followup.send(embed=await self.embed_user_stats(user), ephemeral=True)
 
     @commands.command(name="stats", description="Get the scream statistics for a user.")
     @commands.guild_only()
     async def text_user_stats(self, ctx: commands.Context, user: Optional[discord.Member] = None):
         if user is None:
             user = ctx.author
-        await ctx.send(embed=self.embed_user_stats(user))
+        await ctx.send(embed=await self.embed_user_stats(user))
 
     @stats_group.command(description="Check if this user has screamed yet today")
     @app_commands.guild_only()
@@ -376,7 +376,7 @@ class statistics(commands.Cog):
     async def leaderboard(self, interaction: discord.Interaction):
         now = round(datetime.timestamp(now_tz()))
         await interaction.response.send_message(f"Leaderboard Loading... since <t:{now}:R>", ephemeral=False)
-        await (await interaction.original_response()).edit(content="", embed=self.embed_leaderboad())
+        await (await interaction.original_response()).edit(content="", embed=await self.embed_leaderboad())
 
     @commands.command(
         name="leaderboard",
@@ -386,7 +386,7 @@ class statistics(commands.Cog):
     @commands.cooldown(1, 5.0, type=commands.BucketType.user)
     @commands.guild_only()
     async def text_leaderboard(self, ctx: commands.Context):
-        await ctx.send(embed=self.embed_leaderboad())
+        await ctx.send(embed=await self.embed_leaderboad())
 
     # endregion
     # region App Only Commands
@@ -501,7 +501,7 @@ class statistics(commands.Cog):
     @app_commands.guild_only()
     async def statistics_menu(self, interaction: discord.Interaction, user: discord.Member) -> None:
         await interaction.response.defer(ephemeral=True)
-        msg = await interaction.followup.send(embed=self.embed_user_stats(user), ephemeral=True, wait=True)
+        msg = await interaction.followup.send(embed=await self.embed_user_stats(user), ephemeral=True, wait=True)
         await msg.delete(delay=120)
 
     @app_commands.guild_only()
