@@ -342,7 +342,7 @@ class statistics(commands.Cog):
         await interaction.response.defer()
         if user is None:
             user = interaction.user
-        await interaction.followup.send(embed=await self.embed_user_stats(user), ephemeral=True)
+        await interaction.followup.send(embed=await self.embed_user_stats(user), ephemeral=False)
 
     @commands.command(name="stats", description="Get the scream statistics for a user.")
     @commands.guild_only()
@@ -354,12 +354,12 @@ class statistics(commands.Cog):
     @stats_group.command(description="Check if this user has screamed yet today")
     @app_commands.guild_only()
     async def app_didiscream(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         if user is None:
             user = interaction.user
         uid = user.id
         msg = await self.has_screamed(uid)
-        await interaction.followup.send(msg, ephemeral=True)
+        await interaction.followup.send(msg, ephemeral=False)
 
     @commands.command(name="didiscream", description="Check if this user has screamed yet today")
     @commands.guild_only()

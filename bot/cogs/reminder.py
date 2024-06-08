@@ -99,7 +99,7 @@ class reminders(commands.GroupCog, name="reminders"):
             now = round(datetime.timestamp(now_tz()))
             then = round(datetime.timestamp(self.requested_time))
             embed = discord.Embed(
-                title=f"Scheduled Reminder",
+                title="Scheduled Reminder",
                 description=f"<@{self.aid}>'s repeating reminder\nSent <t:{now}:T> <t:{now}:d>\nReqested: <t:{then}:T> <t:{then}:d>",
             )
             embed.add_field(name="Message", value=f"{self.message}")
@@ -123,15 +123,6 @@ class reminders(commands.GroupCog, name="reminders"):
 
         :raises Exception: if the database is not enabled
         """
-
-        async def start_reminder(delay: int, rid: int, aid: int, cid: int, requested_time: datetime, message: str):
-            await asyncio.sleep(delay)
-            channel = self.bot.get_channel(cid)
-            then = round(datetime.timestamp(requested_time))
-            msg = f"<@{aid}>, this is your reminder (loaded from backup)\nReqested <t:{then}:T> <t:{then}:d>"
-            msg += f"\nYou wanted to say: {message}"
-            await channel.send(msg, allowed_mentions=mention_only_user)
-            await self.remove_reminder(aid, rid)
 
         self.log.info(f"Initialised {self.__class__.__name__}")
 
@@ -162,7 +153,9 @@ class reminders(commands.GroupCog, name="reminders"):
                     else:  # Set up missing reminder
                         delay = int((send_time - now).total_seconds())
                         self.tasks.append(
-                            asyncio.create_task(start_reminder(delay, rid, aid, cid, requested_time, msg))
+                            asyncio.create_task(
+                                self.start_reminder(rid, aid, cid, requested_time, msg, delay=delay, backup=True)
+                            )
                         )
 
     async def _destroy(self):
@@ -170,6 +163,29 @@ class reminders(commands.GroupCog, name="reminders"):
             await reminder.stop()
         for task in self.tasks:
             task.cancel()
+
+    async def start_reminder(
+        self,
+        rid: int,
+        aid: int,
+        cid: int,
+        requested_time: datetime,
+        message: str,
+        delay: int = 0,
+        backup: bool = False,
+    ):
+        await asyncio.sleep(delay)
+        channel = await self.bot.fetch_channel(cid)
+
+        then = round(datetime.timestamp(requested_time))
+        msg = f"<@{aid}>, this is your reminder"
+        msg += "(loaded from backup)" if backup else ""
+        msg += f"\nReqested <t:{then}:T> <t:{then}:d>"
+        msg += f"\nYou wanted to say: {message}"
+        await channel.send(msg, allowed_mentions=mention_only_user)
+        await self.remove_reminder(aid, rid)
+
+    # region Reminder Control
 
     async def add_reminder(self, user_id, channel_id, message, send_time, requested_time, repeat=False):
         async with self.bot.session as session:
@@ -207,7 +223,6 @@ class reminders(commands.GroupCog, name="reminders"):
         """
         now = now_tz()
 
-        now_ts = round(datetime.timestamp(now))
         remind_time = now + timedelta(seconds=delta_s)
         remind_time_ts = round(datetime.timestamp(remind_time))
 
@@ -222,20 +237,18 @@ class reminders(commands.GroupCog, name="reminders"):
 
         await send_f(f"Your reminder will be sent <t:{remind_time_ts}:R>.", ephemeral=True)
 
-        rid = await self.add_reminder(author.id, ctx.channel.id, message, remind_time, now, repeat)
-
+        cid = ctx.channel.id if isinstance(ctx, commands.Context) else ctx.channel_id
+        aid = author.id
+        rid = await self.add_reminder(aid, cid, message, remind_time, now, repeat)
         if not repeat:
-            msg = f"{author.mention}, this is your reminder\nReqested <t:{now_ts}:T> <t:{now_ts}:d>"
-            msg += f"\nYou wanted to say: {message}"
-            await asyncio.sleep(delta_s)
-
-            await send_f(msg, ephemeral=True)
-            await self.remove_reminder(author.id, rid)
+            self.tasks.append(asyncio.create_task(self.start_reminder(rid, aid, cid, now, message)))
         else:
-            self.repeating[rid] = self.RepeatingReminder(self.bot, author.id, ctx.channel.id, message, delta_s, now)
+            self.repeating[rid] = self.RepeatingReminder(self.bot, aid, cid, message, delta_s, now)
             await self.repeating[rid].start()
 
-    # Commands
+    # endregion
+    # region Commands
+
     @create_group.command(
         name="format",
         description="Set a one off reminder (Date Format).",
@@ -301,6 +314,7 @@ class reminders(commands.GroupCog, name="reminders"):
             return
         await self._reminder(interaction, time_s, message, repeat=True)
 
+    # TODO: use pagination buttons using the UI
     @app_commands.command(name="show", description="See your reminders")
     @app_commands.checks.bot_has_permissions(send_messages=True)
     async def show_reminders(self, interaction: discord.Interaction):
@@ -309,7 +323,7 @@ class reminders(commands.GroupCog, name="reminders"):
             stmt = select(Reminder).where(Reminder.user_id == interaction.user.id)
             reminders: Sequence[Reminder] = (await session.scalars(stmt)).all()
 
-            embed = discord.Embed(title=f"Reminders", description=f"{interaction.user.display_name}'s reminders.")
+            embed = discord.Embed(title="Reminders", description=f"{interaction.user.display_name}'s reminders.")
             if reminders:
                 msg = "\n".join(
                     [
@@ -347,7 +361,7 @@ class reminders(commands.GroupCog, name="reminders"):
         await interaction.response.defer(ephemeral=True)
         async with self.bot.session as session:
             reminders: Sequence[Reminder] = (await session.scalars(select(Reminder))).all()
-            embed = discord.Embed(title=f"Reminders", description=f"All reminders.")
+            embed = discord.Embed(title="Reminders", description="All reminders.")
             if reminders:
                 msg = "\n".join(
                     [
@@ -364,6 +378,8 @@ class reminders(commands.GroupCog, name="reminders"):
 
             embed.add_field(name="Reminders", value=msg)
             await interaction.followup.send(embed=embed, ephemeral=True, allowed_mentions=mention_only_user)
+
+    # endregion
 
 
 rems = None
