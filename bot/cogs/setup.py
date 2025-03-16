@@ -5,12 +5,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.database.models import CourseConfig, StatisticsConfig
+from bot.database.models import CourseConfig, StatisticsConfig, Course
+from sqlalchemy import select
 
 cog_name = "setup"
 
 
-class setupCop(commands.Cog):
+class setupCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         super().__init__()
         self.bot = bot
@@ -82,8 +83,8 @@ class setupCop(commands.Cog):
             channel_id = channel.id if channel else module.channel.id
             minor_role_id = minor_role.id if minor_role else module.minor_role.id
             major_role_id = major_role.id if major_role else module.major_role.id
-            regexp_primary = regexp_primary if regexp_primary else module.regexp_primary.pattern
-            regexp_secondary = regexp_secondary if regexp_secondary else module.regexp_secondary.pattern
+            regexp_primary = regexp_primary.pattern if regexp_primary else module.regexp_primary.pattern
+            regexp_secondary = regexp_secondary.pattern if regexp_secondary else module.regexp_secondary.pattern
             minor_threshold = minor_threshold if minor_threshold else module.minor_threshold
             major_threshold = major_threshold if major_threshold else module.major_threshold
             if row is None:
@@ -137,6 +138,7 @@ class setupCop(commands.Cog):
         interaction: discord.Interaction,
         auto_delete: Optional[bool] = None,
         auto_delete_ignore_admins: Optional[bool] = None,
+        codes: Optional[str] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         module_name = "course"
@@ -158,6 +160,16 @@ class setupCop(commands.Cog):
             if (value := locals()[attr]) is not None:
                 setattr(module, attr, value)
 
+        if codes:
+            try:
+                codes = codes.split(",")
+                for code in codes:
+                    if not re.fullmatch(r"[A-Z]{4}", code):
+                        raise ValueError
+            except ValueError:
+                return await interaction.followup.send("Error: Codes must be 4 capital letters separated by commas")
+            module.course_codes = codes
+
         # Save to database
         async with self.bot.session as session:
             row = await session.get(CourseConfig, interaction.guild_id)
@@ -175,6 +187,22 @@ class setupCop(commands.Cog):
                 row.auto_delete = auto_delete
                 row.auto_delete_ignore_admins = auto_delete_ignore_admins
             session.add(row)
+            
+            # codes
+            guild_id = interaction.guild_id
+            if module.course_codes:
+                # first remove all codes that are not in the list
+                all_codes = (await session.scalars(select(Course))).all()
+                for row in all_codes:
+                    code = row.course_code
+                    if code not in module.course_codes:
+                        await session.delete(row)
+                # then add all codes that are not in the database
+                for code in module.course_codes:
+                    self.log.info(code)
+                    if not await session.get(Course, (guild_id, code)):
+                        session.add(Course(guild_id=interaction.guild_id, course_code=code))
+            
             await session.commit()
         # Send response
         embed = discord.Embed(title=f"{module_name}", color=discord.Color.magenta())
@@ -182,13 +210,15 @@ class setupCop(commands.Cog):
         if module.auto_delete is not None:
             embed.add_field(name="Auto Delete Channels", value=module.auto_delete)
         if module.auto_delete_ignore_admins is not None:
-            embed.add_field(name="Audo Delete: Ignore Admins", value=module.auto_delete_ignore_admins)
-
+            embed.add_field(name="Auto Delete: Ignore Admins", value=module.auto_delete_ignore_admins)
+        if module.course_codes:
+            embed.add_field(name="Course Codes", value=", ".join(module.course_codes))
+        
         await interaction.followup.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(setupCop(bot))
+    await bot.add_cog(setupCog(bot))
 
 
 async def teardown(bot):

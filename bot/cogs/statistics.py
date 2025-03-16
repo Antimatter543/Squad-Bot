@@ -111,6 +111,11 @@ class statistics(commands.Cog):
 
         for guild in self.bot.guilds:
             await self.enroll(guild.id)
+            
+        self.reset_streak.start()
+
+    def cog_unload(self):
+        self.reset_streak.cancel()
 
     async def enroll(self, guild_id):
         async with self.bot.session as session:
@@ -151,10 +156,10 @@ class statistics(commands.Cog):
             # 3 days gives enough leeway for weird timezone issues
             three_days = self.today - timedelta(days=3)
             users = await session.execute(
-                select(Screams).where(Screams.sc_streak > 0).where(Screams.sc_daily < three_days)
+                select(Screams).where(Screams.streak > 0).where(Screams.daily < three_days)
             )
             for user in users:
-                user.sc_streak = 0
+                user.streak = 0
                 session.add(user)
             await session.commit()
 
@@ -186,29 +191,29 @@ class statistics(commands.Cog):
                         if user is None:
                             user = Screams(
                                 user_id=author.id,
-                                sc_total=0,
-                                sc_streak=0,
-                                sc_streak_last=0,
-                                sc_best_streak=0,
-                                sc_daily=epoch(),
-                                sc_streak_keeper=epoch(),
+                                total=0,
+                                streak=0,
+                                streak_last=0,
+                                best_streak=0,
+                                daily=epoch(),
+                                streak_keeper=epoch(),
                             )
-                        user.sc_total += 1
+                        user.total += 1
 
                         today = self.today
                         streak = 0
-                        if user.sc_daily < today and match_primary:
+                        if user.daily < today and match_primary:
                             yesterday = today - timedelta(days=1)
-                            if user.sc_daily > yesterday:
-                                streak = user.sc_streak
+                            if user.daily > yesterday:
+                                streak = user.streak
                             else:
-                                user.sc_streak_last = user.sc_streak
+                                user.streak_last = user.streak
 
                             streak += 1
-                            if streak > user.sc_best_streak:
-                                user.sc_best_streak = streak
-                            user.sc_streak = streak
-                            user.sc_daily = now_tz()
+                            if streak > user.best_streak:
+                                user.best_streak = streak
+                            user.streak = streak
+                            user.daily = now_tz()
 
                             await message.channel.send(
                                 f"Congrats {author.mention} on your first scream of the day.\nYour current streak is: {streak}."
@@ -236,7 +241,7 @@ class statistics(commands.Cog):
         row = await self.get_screams(uid)
         if row is None:
             return f"{name} has not done any screaming yet."
-        if row.sc_daily < self.today:
+        if row.daily < self.today:
             msg = "have not"
         else:
             msg = "have"
@@ -268,9 +273,9 @@ class statistics(commands.Cog):
         embed.set_author(name=f"{name}")
         embed.set_thumbnail(url=f"{avatar}")
         if row is not None:
-            embed.add_field(name="Total Screams", value=f"{row.sc_total}")
-            embed.add_field(name="Scream Streak", value=f"{row.sc_streak}")
-            embed.add_field(name="Best Scream Streak", value=f"{row.sc_best_streak}")
+            embed.add_field(name="Total Screams", value=f"{row.total}")
+            embed.add_field(name="Scream Streak", value=f"{row.streak}")
+            embed.add_field(name="Best Scream Streak", value=f"{row.best_streak}")
         else:
             embed.add_field(name="", value="No screams as of yet.")
         return embed
@@ -292,7 +297,7 @@ class statistics(commands.Cog):
             count = 0
             for row in rows:
                 user = await self.get_user(row.user_id)
-                message += f"{emoji[row.rank]}\u27F6 {user.display_name} with {row.sc_col} screams.\n"
+                message += f"{emoji[row.rank]}\u27F6 {user.display_name} with {row.col} screams.\n"
                 count += 1
             for i in range(count, top):
                 message += f"{emoji[i+1]}\u27F6 This could be you!\n"
@@ -304,10 +309,10 @@ class statistics(commands.Cog):
         embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1043839508887634010.webp?size=96&quality=lossless")
 
         async with self.bot.session as session:
-            cols = [Screams.sc_total, Screams.sc_streak, Screams.sc_best_streak]
+            cols = [Screams.total, Screams.streak, Screams.best_streak]
             subqs = [
                 (
-                    select(Screams.user_id, col.label("sc_col"), func.rank().over(order_by=col.desc()).label("rank"))
+                    select(Screams.user_id, col.label("col"), func.rank().over(order_by=col.desc()).label("rank"))
                 ).subquery()
                 for col in cols
             ]
@@ -333,7 +338,7 @@ class statistics(commands.Cog):
     # endregion
 
     # region Commands
-    # We use a base command and the create distinct app and text commands isntead of a
+    # We use a base command and the create distinct app and text commands instead of a
     # hybrid command to have more control over command grouping
 
     @stats_group.command(name="user", description="Get the scream statistics for a user.")
@@ -421,27 +426,27 @@ class statistics(commands.Cog):
         yesterday = today - timedelta(days=1)
         seven_days_ago = today - timedelta(days=7)
         six_months_ago = today - timedelta(days=180)  # approx 6 months
-        scream_time = round(datetime.timestamp(row.sc_daily))
-        if row.sc_daily > yesterday:
+        scream_time = round(datetime.timestamp(row.daily))
+        if row.daily > yesterday:
             await interaction.followup.send(
                 "You do not need to save your streak, scream to continue it",
                 ephemeral=True,
             )
             return
-        if row.sc_daily < seven_days_ago:
+        if row.daily < seven_days_ago:
             await interaction.followup.send(
                 f"Your streak is too old (+7d) to save, scream to start a new one (last scream was <t:{scream_time}:R>)",
                 ephemeral=True,
             )
             return
-        if row.sc_streak_keeper > six_months_ago:
-            save_time = round(datetime.timestamp(row.sc_streak_keeper))
+        if row.streak_keeper > six_months_ago:
+            save_time = round(datetime.timestamp(row.streak_keeper))
             await interaction.followup.send(
                 f"You can only save your streak once every 6 months (lasted saved <t:{save_time}:R>), scream to start a new one",
                 ephemeral=True,
             )
             return
-        if row.sc_streak < 30:
+        if row.streak_last < 30:
             await interaction.followup.send(
                 "Your streak is too short to save, scream to start a new one",
                 ephemeral=True,
@@ -449,20 +454,20 @@ class statistics(commands.Cog):
             return
         if confirm == "Check":
             await interaction.followup.send(
-                f"Your last streak was {row.sc_streak_last} days long, you can save it by sacrificing 30 days.\nYour last scream was <t:{scream_time}:R>.",
+                f"Your last streak was {row.streak_last} days long, you can save it by sacrificing 30 days.\nYour last scream was <t:{scream_time}:R>.",
                 ephemeral=True,
             )
             return
         async with self.bot.session as session:
-            row.sc_streak_keeper = today
-            row.sc_streak = row.sc_streak_last - 30
-            row.sc_streak_last = 0
+            row.streak_keeper = today
+            row.streak = row.streak_last - 30
+            row.streak_last = 0
             session.add(row)
             await session.commit()
         await interaction.followup.send(
             "Your streak has been saved, you lost 30 days but kept the streak.",
             ephemeral=True,
-            embed=await self.embed_user_stats(user.id, user.display_name, user.display_avatar),
+            embed=await self.embed_user_stats(user),
         )
 
     @stats_group.command(name="override", description="Override a users existing stats.")
@@ -485,13 +490,13 @@ class statistics(commands.Cog):
                 await interaction.followup.send(f"{user.display_name} has no stats to override.", ephemeral=True)
                 return
             if total is not None:
-                row.sc_total = total
+                row.total = total
             if streak is not None:
-                row.sc_streak = streak
+                row.streak = streak
             if best_streak is not None:
-                row.sc_best_streak = best_streak
+                row.best_streak = best_streak
             if set_daily_today:
-                row.sc_daily = now_tz()
+                row.daily = now_tz()
             session.add(row)
             await session.commit()
         await interaction.followup.send(f"Updated {user.display_name}'s stats.", ephemeral=True)

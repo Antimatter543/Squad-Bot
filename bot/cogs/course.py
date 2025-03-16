@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 from sqlalchemy import Sequence, delete, select
 
-from bot.database.models import CourseChannel, CourseConfig, CourseEnrollment
+from bot.database.models import CourseChannel, CourseConfig, CourseEnrollment, Course
 from bot.lib.date import now_tz
 
 cog_name = "course"
@@ -20,9 +20,10 @@ class course(commands.Cog):
         def __init__(self) -> None:
             self.auto_delete = True
             self.auto_delete_ignore_admins = False
+            self.course_codes = []
 
         @classmethod
-        async def from_row(cls, bot: commands.Bot, row: CourseConfig):
+        async def from_row(cls, bot: commands.Bot, row: CourseConfig, codes: list[str] = None):
             """
             Create a new Config object from a row in the database
 
@@ -42,24 +43,26 @@ class course(commands.Cog):
             except discord.Forbidden:
                 bot.log.warning(f"Could not find a channel or role for guild {row.guild_id}")
                 pass
-
+            if codes is not None:
+                obj.course_codes = codes
             return obj
 
     course_group = app_commands.Group(name="course", description="Course management")
     enrollments_group = app_commands.Group(name="enrollment", description="Enrollment management")
 
     # https://ppl.app.uq.edu.au/sites/default/files/DisciplineDescriptor%20table_PPL3%2020%2003%20Course%20Coding%2017Sept2014.pdf
-    descriptors = [
-        "COMP",
-        "COMS",
-        "COSC",
-        "CSSE",
-        "DECO",
-        "INFS",
-        "MATH",
-        "STAT",
-        "ENGG",
-    ]
+    # descriptors = [
+    #     "COMP",
+    #     "COMS",
+    #     "COSC",
+    #     "CSSE",
+    #     "CYBR",
+    #     "DECO",
+    #     "INFS",
+    #     "MATH",
+    #     "STAT",
+    #     "ENGG",
+    # ]
 
     def __init__(self, bot: commands.Bot) -> None:
         super().__init__()
@@ -88,6 +91,7 @@ class course(commands.Cog):
             await conn.run_sync(CourseChannel.__table__.create, checkfirst=True)
             await conn.run_sync(CourseEnrollment.__table__.create, checkfirst=True)
             await conn.run_sync(CourseConfig.__table__.create, checkfirst=True)
+            await conn.run_sync(Course.__table__.create, checkfirst=True)
 
         for guild in self.bot.guilds:
             await self.enroll(guild.id)
@@ -98,7 +102,9 @@ class course(commands.Cog):
             row = await session.get(CourseConfig, guild_id)
             if row is None:
                 return
-            self.bot.modules[cog_name][guild_id] = await self.Config.from_row(self.bot, row)
+            all_codes = (await session.scalars(select(Course))).all()
+            codes = [code.course_code for code in all_codes]
+            self.bot.modules[cog_name][guild_id] = await self.Config.from_row(self.bot, row, codes)
 
     def format_channel_name(self, name: str, is_category=False) -> str:
         """
@@ -216,6 +222,8 @@ class course(commands.Cog):
             names = [ch.name for ch in channels]
             return sorted(names + [channel_name]).index(channel_name)
 
+        config = self.bot.modules[cog_name].get(guild.id)
+        
         channel_name = self.format_channel_name(channel_name, is_category)
         if is_category:
             overwrites = {
@@ -223,7 +231,7 @@ class course(commands.Cog):
                 self.bot.user: discord.PermissionOverwrite(view_channel=True),
             }
             categories = guild.categories
-            course_categories = [cat for cat in categories if cat.name in self.descriptors]
+            course_categories = [cat for cat in categories if cat.name in config.course_codes]
             position = get_position(course_categories, channel_name) + (len(categories) - len(course_categories))
             channel = await guild.create_category(channel_name, overwrites=overwrites, position=position)
             await add_channel(channel)
@@ -259,7 +267,7 @@ class course(commands.Cog):
         elif isinstance(channel, discord.CategoryChannel):
             for ch in channel.channels:
                 await self.delete_channel(ch)
-            await remove_channel(ch)
+            await remove_channel(channel)
             await channel.delete()
         else:
             raise ValueError(f"Invalid channel type: {type(channel)}")
@@ -322,8 +330,10 @@ class course(commands.Cog):
         :return: the course channels
         """
         res = []
+        config = self.bot.modules[cog_name].get(guild.id)
+        
         for channel in guild.text_channels:
-            if channel.category is not None and channel.category.name in self.descriptors:
+            if channel.category is not None and channel.category.name in config.course_codes:
                 res.append(channel)
         return res
 
@@ -335,7 +345,7 @@ class course(commands.Cog):
         if course is not None and course["time"] > now - timedelta(days=30):
             return course["result"]
         async with aiohttp.ClientSession() as session:
-            # site blocks deafult user agent
+            # site blocks default user agent
             headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/"}
             uri = f"https://my.uq.edu.au/programs-courses/course.html?course_code={course_code}"
             async with session.get(uri, headers=headers) as resp:
@@ -365,9 +375,10 @@ class course(commands.Cog):
             )
             return
         descriptor, _ = self.parse_course_code(code)
-        if descriptor not in self.descriptors:
+        config = self.bot.modules[cog_name].get(guild.id)
+        if descriptor not in config.course_codes:
             await interaction.followup.send(
-                f"Invalid course descriptor: {descriptor}. Must be one of {', '.join(self.descriptors)}.",
+                f"Cannot enroll in that course type in this server: {descriptor}. Must be one of {', '.join(config.course_codes)}.",
                 ephemeral=True,
             )
             return
@@ -598,7 +609,8 @@ class course(commands.Cog):
                         session.add(enrollment)
             # add new channels
             channels = self.get_course_channels(guild)
-            channels += [channel for channel in guild.categories if channel.name in self.descriptors]
+            config = self.bot.modules[cog_name].get(guild.id)
+            channels += [channel for channel in guild.categories if channel.name in config.course_codes]
             for channel in channels:
                 if channel.id not in db_channel_ids:
                     channel_db = CourseChannel(
@@ -654,7 +666,8 @@ class course(commands.Cog):
     async def delete_courses(self, interaction: discord.Interaction, channel: discord.abc.GuildChannel) -> None:
         await interaction.response.defer(ephemeral=True)
         descriptor, _ = self.parse_course_code(channel.name, allow_category=True)
-        if descriptor not in self.descriptors:
+        config = self.bot.modules[cog_name].get(interaction.guild.id)
+        if descriptor not in config.course_codes:
             await interaction.followup.send(f"Cannot use this command to delete non-course channels.", ephemeral=True)
             return
         await self.delete_channel(channel)

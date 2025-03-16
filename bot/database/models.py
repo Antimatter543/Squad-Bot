@@ -8,32 +8,31 @@ from bot.database import Base
 
 # statistics.py
 
-
 class Screams(Base):
-    __tablename__ = "dc_screams"
+    __tablename__ = "screams"
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    sc_total: Mapped[int]
-    sc_streak: Mapped[int]
-    sc_streak_last = Mapped[int]
-    sc_best_streak: Mapped[int]
-    sc_daily: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    sc_streak_keeper: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    total: Mapped[int]
+    streak: Mapped[int]
+    streak_last = Mapped[int]
+    best_streak: Mapped[int]
+    daily: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    streak_keeper: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self):
         return (
             f"<Screams("
             f"user_id={self.user_id},"
-            f"sc_total={self.sc_total},"
-            f"sc_streak={self.sc_streak},"
-            f"sc_best_streak={self.sc_best_streak},"
-            f"sc_daily={self.sc_daily},"
-            f"sc_streak_keeper={self.sc_streak_keeper}"
+            f"total={self.total},"
+            f"streak={self.streak},"
+            f"best_streak={self.best_streak},"
+            f"daily={self.daily},"
+            f"streak_keeper={self.streak_keeper}"
             ")>"
         )
 
 
 class StatisticsConfig(Base):
-    __tablename__ = "dc_statistics_config"
+    __tablename__ = "statistics_config"
     guild_id = mapped_column(BigInteger, primary_key=True)
     regexp_primary: Mapped[Optional[str]]
     regexp_secondary: Mapped[Optional[str]]
@@ -46,9 +45,8 @@ class StatisticsConfig(Base):
 
 # reminder.py
 
-
 class Reminder(Base):
-    __tablename__ = "dc_reminders"
+    __tablename__ = "reminders"
     id: Mapped[int] = mapped_column(Identity(start=1, cycle=True), primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger)
     channel_id: Mapped[int] = mapped_column(BigInteger)
@@ -78,9 +76,21 @@ class Reminder(Base):
 
 # courses.py
 
+class Course(Base):
+    __tablename__ = "courses"
+    guild_id = mapped_column(BigInteger, primary_key=True)
+    course_code: Mapped[str] = mapped_column(primary_key=True)
+    
+    def __repr__(self):
+        return (
+            f"<Course("
+            f"guild_id={self.guild_id},"
+            f"course_code={self.course_code}"
+            ")>"
+        )
 
 class CourseChannel(Base):
-    __tablename__ = "dc_course_channels"
+    __tablename__ = "course_channels"
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     course_code: Mapped[str] = mapped_column(primary_key=True)
@@ -98,12 +108,12 @@ class CourseChannel(Base):
 
 
 class CourseEnrollment(Base):
-    __tablename__ = "dc_course_enrollments"
+    __tablename__ = "course_enrollments"
 
     __table_args__ = (
         ForeignKeyConstraint(
             ["channel_id", "guild_id", "course_code"],
-            ["dc_course_channels.channel_id", "dc_course_channels.guild_id", "dc_course_channels.course_code"],
+            ["course_channels.channel_id", "course_channels.guild_id", "course_channels.course_code"],
         ),
         {},
     )
@@ -116,7 +126,7 @@ class CourseEnrollment(Base):
     channel = relationship(
         "CourseChannel",
         foreign_keys=[channel_id, guild_id, course_code],
-        backref=backref("dc_course_enrollments", cascade="all, delete-orphan"),
+        backref=backref("course_enrollments", cascade="all, delete-orphan"),
     )
 
     def __repr__(self):
@@ -129,9 +139,8 @@ class CourseEnrollment(Base):
             ")>"
         )
 
-
 class CourseConfig(Base):
-    __tablename__ = "dc_course_config"
+    __tablename__ = "course_config"
     guild_id = mapped_column(BigInteger, primary_key=True)
     auto_delete: Mapped[Optional[bool]]
     auto_delete_ignore_admins: Mapped[Optional[bool]]
