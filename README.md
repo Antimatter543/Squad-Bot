@@ -28,6 +28,7 @@ See [requirements-dev.txt](./bot/requirements-dev.txt).
    - File logging
    - PSQL Database connection
    - Cogs manager / default commands
+   - Push based Heartbeat
  - Cogs
    - Administrative
      - manage cogs
@@ -48,3 +49,120 @@ See [requirements-dev.txt](./bot/requirements-dev.txt).
      - Enrol / Drop courses (channels)
      - Auto delete empty channels
      - database storage
+
+## Configuration
+
+The bot has a number of environment variables that can be used to configure the environment.
+
+### Discord.py 
+
+#### BOT_TOKEN
+
+Required.
+
+The Discord BOT Token generated from discord.com/developers/applications
+
+#### BOT_PREFIX
+
+Optional.
+
+The prefix to use for the discord bot text commands
+
+#### COGS
+
+Optional.
+
+Comma separated list of cogs to load on startup.
+See [Cogs](./bot/cogs/) for a list of available cogs.
+
+### Logging
+
+#### LOGGING_ENABLED
+
+Optional. Default: True
+
+Enable logging to a file
+
+#### LOGFILE_LOCATION
+
+Optional. Default: $(Current Working Directory)/logs 
+
+Specify log file location.
+**!!!: ** Make sure this directory exists
+
+### Postgres Settings
+
+https://hub.docker.com/_/Postgres
+If not using standalone postgres
+
+#### POSTGRES_PASSWORD
+
+Required.
+
+Password for the Postgres Database
+
+#### POSTGRES_USER
+
+Optional.
+
+Set a user to be created in the Database.
+
+#### POSTGRES_DB
+
+Optional.
+
+Set a database name.
+
+#### PGPORT
+
+Optional.
+
+Specify which port the database should use.
+If not using standard postgres port, also set [POSTGRES_PORT](#postgres_port)
+
+### Misc.
+
+#### DB_ENABLED
+
+Optional. Default: True
+
+Set this to False if you do not wish to configure a PSQL database
+
+#### POSTGRES_HOST
+
+Required (if using database functions).
+
+IP or hostname for the postgres database
+
+#### POSTGRES_PORT
+
+Optional.
+
+Specify which port the database should use.
+If not using standard postgres port, also set [PGPORT](#pgport).
+
+#### DEBUG
+
+Optional. (Boolean values only)
+
+Enable debug mode.
+
+### Heartbeat
+
+#### HEARTBEAT_DESTINATION
+
+Optional.
+
+The destination URL where the heartbeat signal should be sent.
+
+#### HEARTBEAT_INTERVAL
+
+Optional. Default: 60
+
+The interval in seconds between each heartbeat signal.
+
+#### HEARTBEAT_METHOD
+
+Optional. Default: GET
+
+The HTTP method to use for sending the heartbeat signal (e.g., POST, GET).
