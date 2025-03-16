@@ -1,41 +1,63 @@
-FROM python:3.10-alpine as compile-image
+FROM debian:bookworm-slim AS builder
 
-# update and install environment dependancies
-RUN apk update \
-    && apk add --no-cache --virtual build-deps gcc python3-dev py3-virtualenv py3-pip musl-dev \
-    && apk del build-deps \
-    && rm -rf /var/cache/apk/*
+WORKDIR /
 
-# create virtual environment
+ENV APP_HOME=/dcbot \
+    APP_USER=dcbot \
+    APP_GROUP=dcbot
 
-RUN python3 -m venv /opt/venv
-ENV PATH "/opt/venv/bin:$PATH"
+RUN groupadd -r ${APP_GROUP} && \
+    useradd -r -d ${APP_HOME} -m -g ${APP_GROUP} ${APP_USER}
 
-# install python requirements
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN export DEBIAN_FRONTEND=noninteractive; \
+    apt-get -q update \
+    && apt-get -q install -y \
+    -o APT::Install-Suggests=false \
+    -o APT::Install-Recommends=false \
+    python3-pip \
+    python3 \
+    python3-venv \
+    python3-dev \
+    libffi-dev \
+    libnacl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM python:3.10-alpine
+USER ${APP_USER}
+WORKDIR ${APP_HOME}
 
-# update and install environment dependancies
-RUN apk update \
-    && apk add --no-cache --virtual py3-virtualenv py3-pip \
-    && rm -rf /var/cache/apk/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-COPY --from=compile-image /opt/venv /opt/venv
+COPY --chown=${APP_USER}:${APP_GROUP} requirements.txt .
 
-RUN adduser -D discord
-USER discord
-WORKDIR /home/discord
+RUN python3 -m venv .env \
+    && . .env/bin/activate \
+    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir --upgrade -r ${APP_HOME}/requirements.txt
 
-ENV VIRTUAL_ENV /opt/venv
-ENV PATH "/opt/venv/bin:$PATH"  
-# set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-ENV PYTHONPATH "${PYTHONPATH}:/home/discord/bot"
+COPY --chown=${APP_USER}:${APP_GROUP} bot bot
+COPY --chown=${APP_USER}:${APP_GROUP} entrypoint.py entrypoint.py
 
-COPY bot /home/discord/bot/
-COPY run.py /home/discord/
+RUN mkdir -p ${APP_HOME}/logs
 
-ENTRYPOINT [ "python3","./run.py" ]
+FROM gcr.io/distroless/python3-debian12 AS runtime
+
+ENV APP_HOME=/dcbot \
+    APP_USER=dcbot \
+    APP_GROUP=dcbot
+
+COPY --from=builder --chown=0:0 /etc/passwd /etc/passwd
+COPY --from=builder --chown=0:0 /etc/group /etc/group
+
+COPY --from=builder --chown=${APP_USER}:${APP_GROUP} ${APP_HOME} ${APP_HOME}
+
+USER ${APP_USER}
+WORKDIR ${APP_HOME}
+
+ENV PATH=${APP_HOME}/.env/bin:${PATH} \
+    PYTHONPATH=${APP_HOME}/bot \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+ENTRYPOINT [ "/dcbot/.env/bin/python3" ]
+CMD [ "entrypoint.py" ]

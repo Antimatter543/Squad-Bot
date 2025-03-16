@@ -1,31 +1,38 @@
-version: "3.3"
-
-name: discord-bot
-volumes:
-  postgres_volume:
+---
 services:
   postgres:
     image: postgres:latest
+    container_name: dcbot_uqcsc_postgres
     env_file: .env
     user: postgres
     volumes:
       - postgres_volume:/var/lib/postgresql/data/
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_PASSWORD=$DB_PASSWORD
-      - POSTGRES_USER=$DB_USER
-      - POSTGRES_DB=$DB_NAME
+    # ports: 5432
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready" ]
+      test: [ "CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB" ]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - dcbot_uqcsc
   bot:
     build: .
+    container_name: dcbot_uqcsc
     env_file: .env
-    command: python3 ./run.py
     volumes:
-      - ./bot:/home/discord/bot/
+      - ./bot:/dcbot/bot
     depends_on:
       - postgres
+    restart: unless-stopped
+    networks:
+      - dcbot_uqcsc
+
+networks:
+    dcbot_uqcsc:
+      name: dcbot_uqcsc
+      driver: bridge
+
+volumes:
+  postgres_volume:
+    name: dcbot_uqcsc_postgres
