@@ -6,10 +6,11 @@ from logging.handlers import RotatingFileHandler
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import Session, dbconfig, engine
+import aiohttp
 
 
 class Bot(commands.Bot):
@@ -35,16 +36,45 @@ class Bot(commands.Bot):
 
         class Config:
             debug = os.getenv("DEBUG", False)
-            logfile_location = os.getenv("LOGFILE_LOCATION", os.getcwd())
+            logfile_location = os.getenv("LOGFILE_LOCATION", os.getcwd() + "/logs")
             logging_enabled = os.getenv("LOGGING_ENABLED", True)
 
         self.config = Config()
         self.dbconfig = dbconfig
         self.modules = {}
 
+        # configure Heatbeat
+        heartbeat = os.getenv("HEARTBEAT_DESTINATION", False)
+        if heartbeat:
+            self._heartbeat = heartbeat
+            self.heartbeat.start()
+        else:
+            self._heartbeat = None
+
+    @tasks.loop(seconds=int(os.getenv("HEARTBEAT_INTERVAL", 60)))
+    async def heartbeat(self):
+        """
+        Send a heartbeat to the configured destination
+        """
+        method = os.getenv("HEARTBEAT_METHOD", "GET")
+        async with aiohttp.ClientSession() as session:
+            if method == "GET":
+                async with session.get(self._heartbeat) as response:
+                    status_code = response.status
+            elif method == "POST":
+                async with session.post(self._heartbeat) as response:
+                    status_code = response.status
+            else:
+                self.log.error(f"Invalid heartbeat method: {method}")
+                return
+            if status_code != 200:
+                self.log.error(f"Failed to send heartbeat ({self._heartbeat}): {status_code}")
+            else:
+                self.log.debug(f"Sent heartbeat ({self._heartbeat})")
+
     def configure_logging(self) -> None:
         """
-        Configure logging
+        Setup log files and levels
         """
         if not self.config.logging_enabled:
             return
@@ -107,6 +137,27 @@ class Bot(commands.Bot):
             raise Exception("Database functionality is not enabled")
         return Session()
 
+    async def load_cogs(self) -> None:
+        """
+        Load default configuration cogs and any additional cogs specified in the COGS environment variable.
+        """
+        # Load any default cogs
+        default_cogs = ["cogs.setup", "cogs.administrative", "cogs.general"]
+        extra = os.getenv("COGS", "").split(",")
+        default_cogs.extend([f"cogs.{cog}" for cog in extra if cog])
+        for cog in default_cogs:
+            self.log.info(msg=f"Loading: {cog}")
+            try:
+                await self.load_extension(cog)
+            except commands.ExtensionNotFound:
+                self.log.error(f"Extension '{cog}' does not exist")
+            except commands.ExtensionAlreadyLoaded:
+                self.log.error(f"Extension '{cog}' is already loaded")
+            except (commands.NoEntryPointError, commands.ExtensionFailed):
+                self.log.error(f"Extension '{cog}' failed to load")
+            except Exception as e:
+                self.log.error(f"An unexpected error occurred while loading '{cog}': {e}")
+
     async def on_ready(self) -> None:
         """
         Called when the client is done preparing the data received from Discord.
@@ -118,6 +169,8 @@ class Bot(commands.Bot):
             activity=discord.Activity(type=discord.ActivityType.listening, name=f"{self.command_prefix} help"),
         )
         self.log.info(f"Logged in as {self.user} ({self.user.id}) | # Guilds: {len(self.guilds)}")
+        # NOTE: We are loading cogs here and not in setup_hook because some cogs may require guild data
+        await self.load_cogs()
 
     async def close(self) -> None:
         """
@@ -127,18 +180,15 @@ class Bot(commands.Bot):
             await self.db.dispose()
             self.log.info(msg="Database connection closed")
 
+        if self._heartbeat:
+            self.heartbeat.cancel()
+
         self.log.info("Shutting Down")
         await super().close()
 
     async def setup_hook(self) -> None:
-        """Initialize the db, prefixes & cogs."""
-
-        # Cogs loader
-        # Load any default cogs
-        default_cogs = ["cogs.setup", "cogs.administrative", "cogs.general"]
-        for cog in default_cogs:
-            self.log.info(msg=f"Loading: {cog}")
-            await self.load_extension(cog)
+        """Initialize the setup data."""
+        pass
 
     async def on_command(self, ctx: commands.Context):
         """
@@ -160,24 +210,43 @@ class Bot(commands.Bot):
         self.log.info(f"{author} ({nick}) used command: {command}")
 
     async def on_interaction(self, interaction: discord.Interaction):
-        """
-        Log interactions
+        if interaction.command:
+            interaction_name = interaction.command.qualified_name
+        elif interaction.message and interaction.message.interaction:
+            interaction_name = f"Component from {interaction.message.interaction.name}"
+        else:
+            interaction_name = "Component"
+        user = interaction.user
+        if isinstance(user, discord.Member):
+            user_id = f"{user} ({user.nick})"
+        elif isinstance(user, discord.User):
+            user_id = user.name
+        else:
+            user_id = user
+        guild = interaction.guild
+        if guild:
+            guild_id = f"{guild} ({guild.id})"
+        else:
+            guild_id = "DM"
+            
+        self.log.info(f"{interaction_name} interaction by user {user_id} requested on {guild_id}")
 
-        :param interaction: interaction to log
-        """
-        author = interaction.user
-        if isinstance(author, discord.abc.User):
-            nick = "N/A"
-        elif isinstance(author, discord.Member):
-            nick = author.nick
+    async def on_app_command_completion(self, interaction: discord.Interaction, _):
+        user = interaction.user
+        if isinstance(user, discord.Member):
+            user_id = f"{user} ({user.nick})"
+        elif isinstance(user, discord.User):
+            user_id = user.name
         else:
-            nick = None
-        command = interaction.command
-        if command is None and interaction.message is not None:
-            command = interaction.message.content
+            user_id = user
+        guild = interaction.guild
+        if guild:
+            guild_id = f"{guild} ({guild.id})"
         else:
-            command = "Unknown"
-        self.log.info(f"{author} ({nick}) used command  {command}")
+            guild_id = "DM"
+        self.log.info(
+            f"{interaction.command.qualified_name} interaction by user {user_id} completed on {guild_id}"
+        )
 
     def error_message(
         self, command: commands.Command, error: commands.CommandError | app_commands.errors.AppCommandError
@@ -223,7 +292,7 @@ class Bot(commands.Bot):
         if command is None:
             return
         try:
-            await ctx.message.add_reaction("\u274C")
+            await ctx.message.add_reaction("\u274c")
         except discord.errors.NotFound:
             pass
         await ctx.reply(embed=self.error_message(command, error), delete_after=60)
