@@ -90,6 +90,14 @@ class Bot(commands.Bot):
         )
         logger.addHandler(handler)
 
+        class TimeFilter(logging.Filter):
+            def filter(self, record: logging.LogRecord) -> bool:
+                # https://github.com/Rapptz/discord.py/blob/master/discord/ext/tasks/__init__.py#L234
+                return not record.getMessage().startswith("Clock drift detected for task")
+
+        # Using Docker can cause clock drifts, so we filter out these messages to avoid spamming the logs
+        logger.addFilter(TimeFilter())
+
         logging.getLogger("discord.http").setLevel(logging.INFO)
 
         # Configure our logger
@@ -228,7 +236,7 @@ class Bot(commands.Bot):
             guild_id = f"{guild} ({guild.id})"
         else:
             guild_id = "DM"
-            
+
         self.log.info(f"{interaction_name} interaction by user {user_id} requested on {guild_id}")
 
     async def on_app_command_completion(self, interaction: discord.Interaction, _):
@@ -244,9 +252,7 @@ class Bot(commands.Bot):
             guild_id = f"{guild} ({guild.id})"
         else:
             guild_id = "DM"
-        self.log.info(
-            f"{interaction.command.qualified_name} interaction by user {user_id} completed on {guild_id}"
-        )
+        self.log.info(f"{interaction.command.qualified_name} interaction by user {user_id} completed on {guild_id}")
 
     def error_message(
         self, command: commands.Command, error: commands.CommandError | app_commands.errors.AppCommandError

@@ -146,7 +146,7 @@ class statistics(commands.Cog):
 
     # region Listeners & Tasks
 
-    @tasks.loop(time=reset_time)
+    @tasks.loop(time=[reset_time])
     async def reset_streak(self):
         """
         Reset the streaks for all users at the start of the day
