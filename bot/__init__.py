@@ -103,6 +103,7 @@ class Bot(commands.Bot):
         # Configure our logger
         log_level = logging.DEBUG if self.config.debug else logging.INFO
         self.log = logging.getLogger("bot")
+        self.log.addFilter(TimeFilter())
         self.log.setLevel(log_level)
         self.log.propagate = False
         log_formatter = logging.Formatter(
