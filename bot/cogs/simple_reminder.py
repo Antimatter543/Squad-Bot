@@ -205,7 +205,12 @@ class simple_reminder(commands.Cog):
                 "`.cs remind 1d2h Check the mail`\n"
                 "`.cs remind 3mo Check investments`"
             )
-            await ctx.reply(formatted_help)
+            # Send help message as ephemeral
+            try:
+                await ctx.reply(formatted_help, ephemeral=True)
+            except:
+                # Fallback for older Discord versions that don't support ephemeral on regular messages
+                await ctx.reply(formatted_help)
             return
         
         # Parse the time string (e.g. "5m", "1h30m", "2d", "2w", "1mo", "1y")
@@ -224,11 +229,21 @@ class simple_reminder(commands.Cog):
                 "- `y` = years\n\n"
                 "**Examples:** `10m`, `2h30m`, `1d`, `2w`, `3mo`, `1y`"
             )
-            await ctx.reply(formatted_help)
+            # Send error message as ephemeral
+            try:
+                await ctx.reply(formatted_help, ephemeral=True)
+            except:
+                # Fallback for older Discord versions that don't support ephemeral on regular messages
+                await ctx.reply(formatted_help)
             return
             
         if seconds > 60 * 60 * 24 * 365 * 15:  # 15 years max
-            await ctx.reply("⚠️ Reminder time too long. Maximum is 15 years.")
+            # Send error message as ephemeral
+            try:
+                await ctx.reply("⚠️ Reminder time too long. Maximum is 15 years.", ephemeral=True)
+            except:
+                # Fallback for older Discord versions that don't support ephemeral on regular messages
+                await ctx.reply("⚠️ Reminder time too long. Maximum is 15 years.")
             return
         
         # Calculate the time when the reminder should be sent
@@ -258,7 +273,7 @@ class simple_reminder(commands.Cog):
         embed.add_field(name="Channel", value=f"<#{ctx.channel.id}>", inline=True)
         embed.set_footer(text=f"Reminder ID: {reminder_id} • Use '/cancel_reminder {reminder_id}' to cancel")
         
-        # Send a more visible confirmation message
+        # Send a more visible confirmation message - keep this public
         await ctx.reply(f"✅ **Reminder set!** I'll remind you <t:{remind_time_ts}:R>", embed=embed)
     
     @app_commands.command(
